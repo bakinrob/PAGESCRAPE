@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState, startTransition } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, startTransition, type ChangeEvent } from "react";
 import {
   Download,
   ExternalLink,
@@ -16,7 +16,7 @@ import {
 import { TemplatePreview } from "@/components/template-preview";
 import { buildInspectorModel } from "@/lib/inspector-model";
 import { deriveWorkspaceStage } from "@/lib/workspace-view-state";
-import type { InputMode, JobState, PageResult } from "@/lib/types";
+import type { InputMode, JobState, PageResult, TemplatePackageState } from "@/lib/types";
 
 const sampleHomepage = "https://www.varsityford.com/";
 const sampleManualUrls = [
@@ -278,9 +278,13 @@ export function FordScraperApp() {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [uploadedPackage, setUploadedPackage] = useState<TemplatePackageState | null>(null);
+  const [uploadingPackage, setUploadingPackage] = useState(false);
+  const [packageError, setPackageError] = useState<string | null>(null);
   const [previewByUrl, setPreviewByUrl] = useState<Record<string, PreviewState>>({});
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [compareFullscreen, setCompareFullscreen] = useState(false);
+  const packageInputRef = useRef<HTMLInputElement | null>(null);
   const workspaceStage = deriveWorkspaceStage(job);
   const isOrientation = workspaceStage === "orientation";
   const isProcessing = workspaceStage === "processing";
@@ -439,6 +443,11 @@ export function FordScraperApp() {
     setCompareFullscreen(false);
 
     try {
+      if (!uploadedPackage) {
+        setFormError("Upload a destination template package zip before starting the rebuild.");
+        return;
+      }
+
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -451,6 +460,7 @@ export function FordScraperApp() {
             .filter(Boolean),
           seoLock: true,
           oemPreset: "dealer-static-reference",
+          templatePackageId: uploadedPackage.id,
         }),
       });
 
@@ -460,10 +470,45 @@ export function FordScraperApp() {
         return;
       }
 
-      setJob(payload as JobState);
+      const nextJob = payload as JobState;
+      setJob(nextJob);
+      setUploadedPackage(nextJob.templatePackage ?? uploadedPackage);
       setSelectedPageId(null);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePackageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setPackageError(null);
+    setUploadingPackage(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/template-packages", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setPackageError(payload.error || "Destination package upload failed.");
+        return;
+      }
+
+      setUploadedPackage(payload as TemplatePackageState);
+    } catch (error) {
+      setPackageError(error instanceof Error ? error.message : "Destination package upload failed.");
+    } finally {
+      setUploadingPackage(false);
+      event.target.value = "";
     }
   };
 
@@ -509,15 +554,38 @@ export function FordScraperApp() {
                     </p>
                     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="max-w-xl">
-                        <p className="text-base font-semibold text-white">Zip upload comes next</p>
+                        <p className="text-base font-semibold text-white">
+                          {uploadedPackage ? uploadedPackage.filename : "Upload the destination template zip"}
+                        </p>
                         <p className="mt-2 text-sm leading-7 text-slate-400">
-                          The next step will accept one destination template package zip and index
-                          its HTML, CSS, JS, asset, and optional manifest.json contents.
+                          {uploadedPackage
+                            ? `${uploadedPackage.files.length} files indexed${uploadedPackage.manifestPath ? " • manifest detected" : ""}${uploadedPackage.inferredBrand || uploadedPackage.inferredOem ? ` • ${uploadedPackage.inferredBrand || uploadedPackage.inferredOem}` : ""}`
+                            : "Upload one destination template package zip and the app will index its HTML, CSS, JS, assets, and optional manifest.json contents."}
                         </p>
                       </div>
-                      <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-sky-100">
-                        Coming soon
-                      </span>
+                      <div className="flex flex-wrap gap-3">
+                        <input
+                          ref={packageInputRef}
+                          type="file"
+                          accept=".zip,application/zip"
+                          className="hidden"
+                          onChange={handlePackageUpload}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => packageInputRef.current?.click()}
+                          className="secondary-button"
+                          disabled={uploadingPackage}
+                        >
+                          {uploadingPackage ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+                          {uploadedPackage ? "Replace zip" : "Upload zip"}
+                        </button>
+                        {uploadedPackage ? (
+                          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                            Ready
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
                       {["*.html", "*.css", "*.js", "assets/", "manifest.json"].map((item) => (
@@ -526,6 +594,20 @@ export function FordScraperApp() {
                         </span>
                       ))}
                     </div>
+                    {uploadedPackage?.warnings?.length ? (
+                      <div className="mt-4 space-y-2">
+                        {uploadedPackage.warnings.slice(0, 4).map((warning) => (
+                          <div key={warning} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {packageError ? (
+                      <div className="mt-4 rounded-[1rem] border border-rose-500/30 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
+                        {packageError}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="inline-flex rounded-full border border-white/10 bg-slate-950/60 p-1">
