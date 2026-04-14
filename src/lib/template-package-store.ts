@@ -5,6 +5,30 @@ import path from "node:path";
 import type { TemplatePackageState } from "@/lib/types";
 
 const TEMPLATE_PACKAGE_ROOT = path.join(process.cwd(), "output", "template-packages");
+const WINDOWS_RESERVED_NAMES = new Set([
+  "con",
+  "prn",
+  "aux",
+  "nul",
+  "com1",
+  "com2",
+  "com3",
+  "com4",
+  "com5",
+  "com6",
+  "com7",
+  "com8",
+  "com9",
+  "lpt1",
+  "lpt2",
+  "lpt3",
+  "lpt4",
+  "lpt5",
+  "lpt6",
+  "lpt7",
+  "lpt8",
+  "lpt9",
+]);
 
 function safePathSegment(value: string, fallback: string) {
   const normalized = path.basename(value).replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").trim();
@@ -19,7 +43,23 @@ function safePathSegment(value: string, fallback: string) {
 function safeRelativePath(inputPath: string) {
   const normalized = inputPath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter(Boolean);
-  const sanitized = segments.filter((segment) => segment !== "." && segment !== "..");
+  const sanitized = segments
+    .filter((segment) => segment !== "." && segment !== "..")
+    .map((segment) => {
+      const cleaned = segment
+        .replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-")
+        .replace(/[. ]+$/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 120);
+      if (!cleaned) {
+        return "file";
+      }
+      if (WINDOWS_RESERVED_NAMES.has(cleaned.toLowerCase())) {
+        return `${cleaned}-file`;
+      }
+      return cleaned;
+    });
   return sanitized.join(path.sep);
 }
 

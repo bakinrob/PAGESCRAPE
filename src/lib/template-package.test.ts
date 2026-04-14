@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readFile, rm } from "node:fs/promises";
 
@@ -61,7 +62,7 @@ describe("indexTemplatePackage", () => {
       metadata,
     });
 
-    const extractedHtml = await readFile(`${saved.extractedRoot}\\pages\\home.html`, "utf8");
+    const extractedHtml = await readFile(path.join(saved.extractedRoot, "pages", "home.html"), "utf8");
 
     expect(saved.packageRoot).toContain("output");
     expect(saved.packageRoot).toContain("template-packages");
