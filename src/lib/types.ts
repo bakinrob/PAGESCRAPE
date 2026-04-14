@@ -179,6 +179,12 @@ export interface MappedPagePayload {
   confidence_notes: string[];
 }
 
+export interface RebuiltPagePayload {
+  templatePath: string;
+  html: string;
+  confidence: number;
+}
+
 export interface SourceSnapshot {
   screenshotDataUrl?: string;
   headingSample: string[];
@@ -195,6 +201,7 @@ export interface PageResult {
   sourceSnapshot?: SourceSnapshot;
   extracted?: ExtractedPagePayload;
   mapped?: MappedPagePayload;
+  rebuilt?: RebuiltPagePayload;
 }
 
 export interface JobInput {

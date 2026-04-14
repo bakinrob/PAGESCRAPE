@@ -1,0 +1,245 @@
+import { load } from "cheerio";
+
+import type { MappedPagePayload, RebuiltPagePayload } from "@/lib/types";
+
+export interface DestinationRebuildInput {
+  templateHtml: string;
+  templatePath: string;
+  confidence: number;
+  mappedPage: MappedPagePayload;
+}
+
+function ensureHead($: ReturnType<typeof load>) {
+  const head = $("head").first();
+  if (head.length > 0) {
+    return head;
+  }
+
+  const html = $("html").first();
+  if (html.length > 0) {
+    html.prepend("<head></head>");
+    return $("head").first();
+  }
+
+  $.root().prepend("<html><head></head><body></body></html>");
+  return $("head").first();
+}
+
+function ensureBody($: ReturnType<typeof load>) {
+  const body = $("body").first();
+  if (body.length > 0) {
+    return body;
+  }
+
+  const html = $("html").first();
+  if (html.length > 0) {
+    html.append("<body></body>");
+    return $("body").first();
+  }
+
+  $.root().append("<html><head></head><body></body></html>");
+  return $("body").first();
+}
+
+function firstExistingSelection($: ReturnType<typeof load>, selectors: string[]) {
+  for (const selector of selectors) {
+    const selection = $(selector).first();
+    if (selection.length > 0) {
+      return selection;
+    }
+  }
+
+  return null;
+}
+
+function findSection(
+  mappedPage: MappedPagePayload,
+  slotKeys: string[],
+  labels: string[],
+) {
+  return mappedPage.sections.find((section) => {
+    const slotKey = section.slot_key.toLowerCase();
+    const label = section.label.toLowerCase();
+    return slotKeys.some((candidate) => slotKey.includes(candidate)) ||
+      labels.some((candidate) => label.includes(candidate));
+  });
+}
+
+function buildSectionMarkup(section: MappedPagePayload["sections"][number]) {
+  const heading =
+    section.content_blocks.find((block) => block.type === "heading")?.value ||
+    section.label ||
+    section.slot_key;
+  const paragraphs = section.content_blocks
+    .filter((block) => block.type === "paragraph")
+    .map((block) => `<p>${block.value}</p>`)
+    .join("");
+  const lists = section.content_blocks
+    .filter((block) => block.type === "bullet_list")
+    .map((block) => {
+      const items = block.value
+        .split(/\r?\n+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => `<li>${item}</li>`)
+        .join("");
+      return items ? `<ul>${items}</ul>` : "";
+    })
+    .join("");
+  const contactBlocks = section.content_blocks
+    .filter((block) => ["address_block", "hours_table", "phone_block"].includes(block.type))
+    .map((block) => `<div class="rebuild-block rebuild-${block.type}">${block.value}</div>`)
+    .join("");
+  const ctas = section.ctas
+    .map((cta) => `<a class="rebuild-cta" href="${cta.href}">${cta.label}</a>`)
+    .join("");
+
+  return [
+    `<section data-template-slot="${section.slot_key}">`,
+    `<h2>${heading}</h2>`,
+    paragraphs,
+    lists,
+    contactBlocks,
+    ctas ? `<div class="rebuild-ctas">${ctas}</div>` : "",
+    `</section>`,
+  ].join("");
+}
+
+function updateHead($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
+  const head = ensureHead($);
+  const seo = mappedPage.seo;
+
+  if (seo.title) {
+    const title = head.find("title").first();
+    if (title.length > 0) {
+      title.text(seo.title);
+    } else {
+      head.append(`<title>${seo.title}</title>`);
+    }
+  }
+
+  const metaPairs: Array<[string, string, string]> = [
+    ["name", "description", seo.meta_description],
+    ["property", "og:title", seo.og_title || seo.title],
+    ["property", "og:description", seo.og_description || seo.meta_description],
+    ["property", "og:image", seo.og_image],
+    ["property", "og:type", "website"],
+  ];
+
+  for (const [attr, key, value] of metaPairs) {
+    if (!value) continue;
+    const selector = `meta[${attr}="${key}"]`;
+    const meta = head.find(selector).first();
+    if (meta.length > 0) {
+      meta.attr("content", value);
+      continue;
+    }
+    head.append(`<meta ${attr}="${key}" content="${value}">`);
+  }
+
+  if (seo.canonical_url) {
+    const canonical = head.find('link[rel="canonical"]').first();
+    if (canonical.length > 0) {
+      canonical.attr("href", seo.canonical_url);
+    } else {
+      head.append(`<link rel="canonical" href="${seo.canonical_url}">`);
+    }
+  }
+}
+
+function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
+  const heroSection =
+    findSection(mappedPage, ["hero", "masthead", "banner"], ["hero", "masthead", "banner"]) ??
+    mappedPage.sections[0];
+  if (!heroSection) {
+    return;
+  }
+
+  const hero = firstExistingSelection($, [
+    '[class*="hero"]',
+    '[id*="hero"]',
+    '[class*="masthead"]',
+    '[class*="banner"]',
+    "header",
+  ]);
+
+  if (!hero) {
+    return;
+  }
+
+  const headingText =
+    heroSection.content_blocks.find((block) => block.type === "heading")?.value ||
+    mappedPage.seo.h1;
+  const paragraphText =
+    heroSection.content_blocks.find((block) => block.type === "paragraph")?.value ||
+    mappedPage.seo.meta_description;
+  const cta = heroSection.ctas[0];
+
+  const heroHeading = hero.find("h1").first();
+  if (heroHeading.length > 0) {
+    heroHeading.text(headingText);
+  } else {
+    hero.prepend(`<h1>${headingText}</h1>`);
+  }
+
+  if (paragraphText) {
+    const heroParagraph = hero.find("p").first();
+    if (heroParagraph.length > 0) {
+      heroParagraph.text(paragraphText);
+    } else {
+      hero.append(`<p>${paragraphText}</p>`);
+    }
+  }
+
+  if (cta) {
+    const heroCta = hero.find("a, button").first();
+    if (heroCta.length > 0) {
+      heroCta.text(cta.label);
+      heroCta.attr("href", cta.href);
+    } else {
+      hero.append(`<a class="rebuild-cta" href="${cta.href}">${cta.label}</a>`);
+    }
+  }
+}
+
+function appendSupportingSections($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
+  const contentSections = mappedPage.sections.filter((section) => {
+    const key = section.slot_key.toLowerCase();
+    return !key.includes("hero") && !key.includes("contact") && !key.includes("hours");
+  });
+
+  const contactSections = mappedPage.sections.filter((section) => {
+    const key = section.slot_key.toLowerCase();
+    const label = section.label.toLowerCase();
+    return key.includes("contact") || key.includes("hours") || label.includes("contact") || label.includes("hours");
+  });
+
+  const main = firstExistingSelection($, ["main", "article", '[role="main"]']);
+  const body = ensureBody($);
+  const contentTarget = main ?? body;
+
+  for (const section of contentSections) {
+    contentTarget.append(buildSectionMarkup(section));
+  }
+
+  if (contactSections.length > 0) {
+    const footerOrContact = firstExistingSelection($, ["footer", '[class*="contact"]', '[id*="contact"]']) ?? body;
+    for (const section of contactSections) {
+      footerOrContact.append(buildSectionMarkup(section));
+    }
+  }
+}
+
+export function rebuildDestinationHtml(input: DestinationRebuildInput): RebuiltPagePayload {
+  const $ = load(input.templateHtml);
+
+  updateHead($, input.mappedPage);
+  updateHeroRegion($, input.mappedPage);
+  appendSupportingSections($, input.mappedPage);
+
+  return {
+    templatePath: input.templatePath,
+    html: $.html(),
+    confidence: input.confidence,
+  };
+}

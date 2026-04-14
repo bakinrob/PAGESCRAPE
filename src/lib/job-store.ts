@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { discoverPagesFromHomepage, processUrl } from "@/lib/pipeline";
+import { rebuildDestinationHtml } from "@/lib/destination-rebuild";
 import { detectTemplateFiles } from "@/lib/template-detection";
 import { classifyPackagePath } from "@/lib/template-package";
 import { pairSourcePagesToTemplates } from "@/lib/template-pairing";
@@ -10,6 +11,7 @@ import type {
   JobInput,
   JobState,
   PageResult,
+  RebuiltPagePayload,
   SupportedPageType,
   TemplatePackageFile,
   TemplatePackageState,
@@ -141,6 +143,51 @@ function buildPairingWarnings(
           : [],
     ),
   ]);
+}
+
+async function buildRebuiltPages(job: JobState, pairings: JobState["pairings"]) {
+  if (!job.templatePackage) {
+    return { rebuilds: [], warnings: [] as string[] };
+  }
+
+  const storedPackage = await readStoredTemplatePackage(job.templatePackage.id);
+  if (!storedPackage) {
+    return {
+      rebuilds: [],
+      warnings: [`Template package "${job.templatePackage.id}" is no longer available on disk.`],
+    };
+  }
+
+  const rebuilds: Array<{ pageId: string; rebuilt: RebuiltPagePayload }> = [];
+  const warnings: string[] = [];
+
+  for (const pairing of pairings) {
+    const page = job.pages.find((candidate) => candidate.id === pairing.pageId);
+    const mappedPage = page?.mapped;
+    if (!mappedPage) {
+      warnings.push(`Skipping rebuild for ${pairing.pageId} because mapped output is unavailable.`);
+      continue;
+    }
+
+    const templateHtmlPath = path.join(storedPackage.extractedRoot, pairing.templatePath);
+
+    try {
+      const templateHtml = await readFile(templateHtmlPath, "utf8");
+      rebuilds.push({
+        pageId: pairing.pageId,
+        rebuilt: rebuildDestinationHtml({
+          templateHtml,
+          templatePath: pairing.templatePath,
+          confidence: pairing.confidence,
+          mappedPage,
+        }),
+      });
+    } catch {
+      warnings.push(`Skipping rebuild for ${pairing.pageId} because ${pairing.templatePath} was not readable.`);
+    }
+  }
+
+  return { rebuilds, warnings };
 }
 
 type CreateJobInput = JobInput & {
@@ -360,12 +407,20 @@ async function runJob(jobId: string) {
         const pairings = pairSourcePagesToTemplates(sourcePages, detected.files);
         const destinationBrand = detected.brand ?? pairedJob.destinationBrand;
         const pairingWarnings = buildPairingWarnings(pairings, destinationBrand);
+        const { rebuilds, warnings: rebuildWarnings } = await buildRebuiltPages(
+          { ...pairedJob, destinationBrand },
+          pairings,
+        );
 
         patchJob(jobId, (snapshot) => ({
           ...snapshot,
           destinationBrand,
           pairings,
-          warnings: uniqueStrings([...snapshot.warnings, ...pairingWarnings]),
+          pages: snapshot.pages.map((page) => {
+            const rebuilt = rebuilds.find((entry) => entry.pageId === page.id)?.rebuilt;
+            return rebuilt ? { ...page, rebuilt } : page;
+          }),
+          warnings: uniqueStrings([...snapshot.warnings, ...pairingWarnings, ...rebuildWarnings]),
         }));
       } catch (error) {
         patchJob(jobId, (snapshot) => ({
