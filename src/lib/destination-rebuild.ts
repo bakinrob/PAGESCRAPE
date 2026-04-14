@@ -9,6 +9,39 @@ export interface DestinationRebuildInput {
   mappedPage: MappedPagePayload;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeHref(value: string) {
+  const href = value.trim();
+  if (!href) return "#";
+  if (
+    href.startsWith("/") ||
+    href.startsWith("#") ||
+    href.startsWith("mailto:") ||
+    href.startsWith("tel:")
+  ) {
+    return href;
+  }
+
+  try {
+    const parsed = new URL(href);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    return "#";
+  }
+
+  return "#";
+}
+
 function ensureHead($: ReturnType<typeof load>) {
   const head = $("head").first();
   if (head.length > 0) {
@@ -72,7 +105,7 @@ function buildSectionMarkup(section: MappedPagePayload["sections"][number]) {
     section.slot_key;
   const paragraphs = section.content_blocks
     .filter((block) => block.type === "paragraph")
-    .map((block) => `<p>${block.value}</p>`)
+    .map((block) => `<p>${escapeHtml(block.value)}</p>`)
     .join("");
   const lists = section.content_blocks
     .filter((block) => block.type === "bullet_list")
@@ -81,22 +114,22 @@ function buildSectionMarkup(section: MappedPagePayload["sections"][number]) {
         .split(/\r?\n+/)
         .map((item) => item.trim())
         .filter(Boolean)
-        .map((item) => `<li>${item}</li>`)
+        .map((item) => `<li>${escapeHtml(item)}</li>`)
         .join("");
       return items ? `<ul>${items}</ul>` : "";
     })
     .join("");
   const contactBlocks = section.content_blocks
     .filter((block) => ["address_block", "hours_table", "phone_block"].includes(block.type))
-    .map((block) => `<div class="rebuild-block rebuild-${block.type}">${block.value}</div>`)
+    .map((block) => `<div class="rebuild-block rebuild-${block.type}">${escapeHtml(block.value)}</div>`)
     .join("");
   const ctas = section.ctas
-    .map((cta) => `<a class="rebuild-cta" href="${cta.href}">${cta.label}</a>`)
+    .map((cta) => `<a class="rebuild-cta" href="${escapeHtml(sanitizeHref(cta.href))}">${escapeHtml(cta.label)}</a>`)
     .join("");
 
   return [
-    `<section data-template-slot="${section.slot_key}">`,
-    `<h2>${heading}</h2>`,
+    `<section data-template-slot="${escapeHtml(section.slot_key)}">`,
+    `<h2>${escapeHtml(heading)}</h2>`,
     paragraphs,
     lists,
     contactBlocks,
@@ -160,7 +193,8 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
     '[id*="hero"]',
     '[class*="masthead"]',
     '[class*="banner"]',
-    "header",
+    "main section",
+    "section",
   ]);
 
   if (!hero) {
@@ -195,24 +229,33 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
     const heroCta = hero.find("a, button").first();
     if (heroCta.length > 0) {
       heroCta.text(cta.label);
-      heroCta.attr("href", cta.href);
+      heroCta.attr("href", sanitizeHref(cta.href));
     } else {
-      hero.append(`<a class="rebuild-cta" href="${cta.href}">${cta.label}</a>`);
+      hero.append(
+        `<a class="rebuild-cta" href="${escapeHtml(sanitizeHref(cta.href))}">${escapeHtml(cta.label)}</a>`,
+      );
     }
   }
+}
+
+function isContactSection(section: MappedPagePayload["sections"][number]) {
+  const key = section.slot_key.toLowerCase();
+  const label = section.label.toLowerCase();
+  return (
+    key.includes("contact") ||
+    key.includes("hours") ||
+    label.includes("contact") ||
+    label.includes("hours")
+  );
 }
 
 function appendSupportingSections($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
   const contentSections = mappedPage.sections.filter((section) => {
     const key = section.slot_key.toLowerCase();
-    return !key.includes("hero") && !key.includes("contact") && !key.includes("hours");
+    return !key.includes("hero") && !isContactSection(section);
   });
 
-  const contactSections = mappedPage.sections.filter((section) => {
-    const key = section.slot_key.toLowerCase();
-    const label = section.label.toLowerCase();
-    return key.includes("contact") || key.includes("hours") || label.includes("contact") || label.includes("hours");
-  });
+  const contactSections = mappedPage.sections.filter(isContactSection);
 
   const main = firstExistingSelection($, ["main", "article", '[role="main"]']);
   const body = ensureBody($);

@@ -59,13 +59,13 @@ describe("rebuildDestinationHtml", () => {
             source_section_keys: ["hero"],
             content_blocks: [
               { type: "heading", value: "Welcome to Demo Dealer" },
-              { type: "paragraph", value: "Shop new and used vehicles." },
+              { type: "paragraph", value: "Shop new & used vehicles." },
             ],
             ctas: [{ label: "Browse inventory", href: "/inventory/new" }],
             media_refs: [],
           },
           {
-            slot_key: "contact",
+            slot_key: "dealer_info",
             label: "Contact",
             required: false,
             status: "mapped",
@@ -88,8 +88,10 @@ describe("rebuildDestinationHtml", () => {
     expect(result.confidence).toBe(0.84);
     expect(result.html).toContain("<title>Demo Dealer | New and Used Cars</title>");
     expect(result.html).toContain("Welcome to Demo Dealer");
+    expect(result.html).toContain("Shop new &amp; used vehicles.");
     expect(result.html).toContain('href="/inventory/new"');
     expect(result.html).toContain("123 Main St");
     expect(result.html).toContain('href="tel:5551234567"');
+    expect(result.html.match(/123 Main St/g)).toHaveLength(1);
   });
 });
