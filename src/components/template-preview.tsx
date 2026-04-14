@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { MapPin, Phone } from "lucide-react";
 
 import type { MappedContentBlock, MappedPagePayload, MappedSection } from "@/lib/types";
-import { buildTemplatePackageBaseHref, injectTemplatePackageBase } from "@/lib/package-preview";
+import { prepareTemplatePackagePreviewDocument } from "@/lib/package-preview";
 import { choosePreviewMode } from "@/lib/workspace-view-state";
 
 import styles from "./template-preview.module.css";
@@ -167,7 +167,10 @@ function PackagePreviewFrame({
   templatePackageId?: string;
 }) {
   const previewDocument = templatePackageId
-    ? injectTemplatePackageBase(html, buildTemplatePackageBaseHref(templatePackageId, templatePath))
+    ? prepareTemplatePackagePreviewDocument(html, {
+        packageId: templatePackageId,
+        templatePath,
+      })
     : html;
 
   return (
