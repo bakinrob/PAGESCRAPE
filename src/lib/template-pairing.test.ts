@@ -45,25 +45,68 @@ describe("pairSourcePagesToTemplates", () => {
     );
 
     expect(result).toHaveLength(2);
+    const byPageId = Object.fromEntries(result.map((pairing) => [pairing.pageId, pairing]));
 
-    expect(result[0]).toMatchObject({
+    expect(byPageId["page-home"]).toMatchObject({
       pageId: "page-home",
       sourcePageType: "homepage",
       templatePath: "templates/home.html",
     });
-    expect(result[0].reasons.join(" ")).toContain("exact page-type match");
-    expect(result[0].alternatives).toHaveLength(2);
-    expect(result[0].alternatives[0]).toContain("templates/contact.html");
-    expect(result[0].alternatives[1]).toContain("templates/landing.html");
+    expect(byPageId["page-home"].reasons.join(" ")).toContain("exact page-type match");
+    expect(byPageId["page-home"].alternatives).toHaveLength(1);
+    expect(byPageId["page-home"].alternatives[0]).toContain("templates/contact.html");
 
-    expect(result[1]).toMatchObject({
+    expect(byPageId["page-about"]).toMatchObject({
       pageId: "page-about",
       sourcePageType: "about",
       templatePath: "templates/landing.html",
     });
-    expect(result[1].reasons.join(" ")).toContain("nearest confidence fallback");
-    expect(result[1].alternatives).toContainEqual(
+    expect(byPageId["page-about"].reasons.join(" ")).toContain("nearest confidence fallback");
+    expect(byPageId["page-about"].confidence).toBeLessThan(0.7);
+    expect(byPageId["page-about"].alternatives).toHaveLength(2);
+    expect(byPageId["page-about"].alternatives).toContainEqual(
+      expect.stringContaining("templates/home.html"),
+    );
+    expect(byPageId["page-about"].alternatives).toContainEqual(
       expect.stringContaining("templates/contact.html"),
     );
+  });
+
+  it("does not reuse the same destination template path for multiple source pages", () => {
+    const result = pairSourcePagesToTemplates(
+      [
+        {
+          pageId: "page-service-a",
+          pageType: "service",
+          confidence: 0.94,
+          reasons: ["service-page-a"],
+        },
+        {
+          pageId: "page-service-b",
+          pageType: "service",
+          confidence: 0.81,
+          reasons: ["service-page-b"],
+        },
+      ],
+      [
+        {
+          path: "templates/service-primary.html",
+          pageType: "service",
+          confidence: 0.92,
+          reasons: ["service-primary"],
+          alternatives: [],
+        },
+        {
+          path: "templates/service-secondary.html",
+          pageType: "service",
+          confidence: 0.77,
+          reasons: ["service-secondary"],
+          alternatives: [],
+        },
+      ],
+    );
+
+    expect(result).toHaveLength(2);
+    expect(new Set(result.map((pairing) => pairing.templatePath)).size).toBe(2);
   });
 });

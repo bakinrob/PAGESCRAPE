@@ -58,7 +58,7 @@ function scoreFallbackTemplate(
 ) {
   const distance = Math.abs(sourcePage.confidence - templateFile.confidence);
   return {
-    confidence: Number(Math.max(0, 1 - distance).toFixed(2)),
+    confidence: Number(Math.max(0.2, 0.68 - distance * 0.35).toFixed(2)),
     distance,
     templateFile,
   };
@@ -120,13 +120,29 @@ export function pairSourcePagesToTemplates(
     return [];
   }
 
-  return sourcePages
+  const availableTemplates = [...templateFiles];
+
+  return [...sourcePages]
+    .sort((left, right) => {
+      if (right.confidence !== left.confidence) {
+        return right.confidence - left.confidence;
+      }
+
+      return left.pageId.localeCompare(right.pageId);
+    })
     .map((sourcePage) => {
-      const ranked = rankTemplates(sourcePage, templateFiles);
+      const ranked = rankTemplates(sourcePage, availableTemplates);
       const selected = ranked.ranked[0];
 
       if (!selected) {
         return undefined;
+      }
+
+      const selectedIndex = availableTemplates.findIndex(
+        (template) => template.path === selected.templateFile.path,
+      );
+      if (selectedIndex >= 0) {
+        availableTemplates.splice(selectedIndex, 1);
       }
 
       return {
