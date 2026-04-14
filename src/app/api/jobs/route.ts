@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "All URLs must be valid absolute URLs." }, { status: 400 });
   }
 
-  const requestedPreset = payload.oemPreset?.trim() || "ford-varsity";
+  const requestedPreset = payload.oemPreset?.trim() || "dealer-static-reference";
   const presetIsKnown = await templateExists(requestedPreset);
   if (!presetIsKnown) {
     return NextResponse.json(
