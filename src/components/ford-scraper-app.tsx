@@ -65,6 +65,10 @@ function previewLabel(preview?: PreviewState) {
   }
 }
 
+function destinationBrandLabel(job: JobState | null) {
+  return job?.destinationBrand?.brand || job?.destinationBrand?.oem || "Destination package";
+}
+
 function WorkspaceMetaCard({
   label,
   value,
@@ -173,12 +177,14 @@ function InspectorDrawer({
   open,
   onClose,
   jobWarnings,
+  pairing,
 }: {
   page: PageResult | null;
   preview?: PreviewState;
   open: boolean;
   onClose: () => void;
   jobWarnings: string[];
+  pairing?: JobState["pairings"][number];
 }) {
   if (!page) return null;
 
@@ -205,6 +211,26 @@ function InspectorDrawer({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Template Match</p>
+            <div className="mt-4 space-y-3 text-sm text-slate-300">
+              <p><span className="text-slate-500">Template:</span> {pairing?.templatePath || page.rebuilt?.templatePath || "Awaiting destination match"}</p>
+              <p><span className="text-slate-500">Confidence:</span> {pairing ? `${Math.round(pairing.confidence * 100)}%` : page.rebuilt ? `${Math.round(page.rebuilt.confidence * 100)}%` : "Unavailable"}</p>
+              {pairing?.alternatives.length ? (
+                <div>
+                  <p className="text-slate-500">Alternatives</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {pairing.alternatives.slice(0, 4).map((alternative) => (
+                      <span key={alternative} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                        {alternative}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
           <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Assets</p>
             <div className="mt-4 space-y-3">
@@ -299,6 +325,11 @@ export function FordScraperApp() {
   }, [previewByUrl, selectedPage]);
 
   const selectedPreview = selectedPageWithPreview ? previewByUrl[selectedPageWithPreview.url] : undefined;
+  const selectedPairing = useMemo(
+    () => (selectedPageWithPreview ? job?.pairings.find((pairing) => pairing.pageId === selectedPageWithPreview.id) : undefined),
+    [job?.pairings, selectedPageWithPreview],
+  );
+  const selectedDestinationLabel = destinationBrandLabel(job);
 
   const pollJob = useEffectEvent(async () => {
     if (!job?.id) return;
@@ -696,7 +727,11 @@ export function FordScraperApp() {
                     <WorkspaceMetaCard
                       label="Review target"
                       value={selectedPageWithPreview.extracted?.classification.page_type || "Static page"}
-                      hint="The source page and rebuilt destination remain paired for the current selection."
+                      hint={
+                        selectedPairing
+                          ? `${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                          : "The source page and rebuilt destination remain paired for the current selection."
+                      }
                     />
                   </div>
                 </div>
@@ -766,7 +801,7 @@ export function FordScraperApp() {
                   <div className="border-b border-white/8 px-5 py-4">
                     <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">Rebuilt Template Page</p>
                     <h2 className="mt-3 text-2xl font-semibold text-white">
-                      {selectedPageWithPreview.mapped?.seo.title || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
+                      {selectedDestinationLabel}
                     </h2>
                     <p className="mt-3 text-sm leading-7 text-slate-400">
                       This side follows the uploaded destination package contract rather than a
@@ -774,14 +809,21 @@ export function FordScraperApp() {
                       page.
                     </p>
                     <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                      {job.templatePackage?.filename
-                        ? `Destination package: ${job.templatePackage.filename}`
-                        : "Destination package metadata will appear here after upload."}
+                      {selectedPairing
+                        ? `Template path: ${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                        : job.templatePackage?.filename
+                          ? `Destination package: ${job.templatePackage.filename}`
+                          : "Destination package metadata will appear here after upload."}
                     </p>
                   </div>
 
                   <div className="p-4">
-                    <TemplatePreview mapped={selectedPageWithPreview.mapped} sourceUrl={selectedPageWithPreview.url} />
+                    <TemplatePreview
+                      mapped={selectedPageWithPreview.mapped}
+                      rebuilt={selectedPageWithPreview.rebuilt}
+                      sourceUrl={selectedPageWithPreview.url}
+                      destinationLabel={selectedDestinationLabel}
+                    />
                   </div>
                 </section>
               </div>
@@ -790,7 +832,14 @@ export function FordScraperApp() {
         ) : null}
       </div>
 
-      <InspectorDrawer page={selectedPageWithPreview} preview={selectedPreview} open={inspectorOpen} onClose={() => setInspectorOpen(false)} jobWarnings={job?.warnings ?? []} />
+      <InspectorDrawer
+        page={selectedPageWithPreview}
+        preview={selectedPreview}
+        open={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        jobWarnings={job?.warnings ?? []}
+        pairing={selectedPairing}
+      />
 
       {compareFullscreen && selectedPageWithPreview ? (
         <div className="fixed inset-0 z-50 bg-[#02060c] p-3 sm:p-4">
@@ -819,11 +868,21 @@ export function FordScraperApp() {
                 <div className="shrink-0 border-b border-white/8 px-5 py-4">
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">Rebuilt Template Page</p>
                   <h2 className="mt-3 text-2xl font-semibold text-white">
-                    {selectedPageWithPreview.mapped?.seo.title || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
+                    {selectedDestinationLabel}
                   </h2>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    {selectedPairing
+                      ? `Template path: ${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                      : "Awaiting destination template pairing"}
+                  </p>
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto p-4">
-                  <TemplatePreview mapped={selectedPageWithPreview.mapped} sourceUrl={selectedPageWithPreview.url} />
+                  <TemplatePreview
+                    mapped={selectedPageWithPreview.mapped}
+                    rebuilt={selectedPageWithPreview.rebuilt}
+                    sourceUrl={selectedPageWithPreview.url}
+                    destinationLabel={selectedDestinationLabel}
+                  />
                 </div>
               </section>
             </div>

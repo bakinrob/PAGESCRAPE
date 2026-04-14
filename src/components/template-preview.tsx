@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { MapPin, Phone } from "lucide-react";
 
 import type { MappedContentBlock, MappedPagePayload, MappedSection } from "@/lib/types";
+import { choosePreviewMode } from "@/lib/workspace-view-state";
 
 import styles from "./template-preview.module.css";
 
@@ -149,6 +150,43 @@ function ActionButtons({ items, ghost }: { items: Array<{ label: string; href: s
 
 function EmptyState({ label }: { label: string }) {
   return <div className={styles.emptyState}>{label}</div>;
+}
+
+function PackagePreviewFrame({
+  html,
+  templatePath,
+  confidence,
+  destinationLabel,
+}: {
+  html: string;
+  templatePath: string;
+  confidence: number;
+  destinationLabel?: string;
+}) {
+  return (
+    <div className={`${styles.page} ${styles.packagePreviewShell}`}>
+      <div className={styles.packagePreviewHeader}>
+        <div>
+          <p className={styles.sectionEyebrow}>Package-driven rebuild</p>
+          <h3 className={styles.packagePreviewTitle}>
+            {destinationLabel ? `${destinationLabel} destination template` : "Destination template preview"}
+          </h3>
+        </div>
+        <div className={styles.packagePreviewMeta}>
+          <span>{templatePath}</span>
+          <span>{Math.round(confidence * 100)}% match</span>
+        </div>
+      </div>
+      <div className={styles.packagePreviewFrame}>
+        <iframe
+          title={`Package preview for ${templatePath}`}
+          srcDoc={html}
+          className={styles.packagePreviewIframe}
+          sandbox=""
+        />
+      </div>
+    </div>
+  );
 }
 
 function HomepageTemplate({ mapped }: { mapped: MappedPagePayload }) {
@@ -798,12 +836,32 @@ function renderPreviewByType(mapped: MappedPagePayload) {
 
 export function TemplatePreview({
   mapped,
+  rebuilt,
   sourceUrl,
+  destinationLabel,
 }: {
   mapped?: MappedPagePayload;
+  rebuilt?: { html: string; templatePath: string; confidence: number };
   sourceUrl: string;
+  destinationLabel?: string;
 }) {
-  if (!mapped) {
+  const previewMode = choosePreviewMode({
+    rebuiltHtml: rebuilt?.html,
+    mappedPage: mapped,
+  });
+
+  if (previewMode === "package" && rebuilt) {
+    return (
+      <PackagePreviewFrame
+        html={rebuilt.html}
+        templatePath={rebuilt.templatePath}
+        confidence={rebuilt.confidence}
+        destinationLabel={destinationLabel}
+      />
+    );
+  }
+
+  if (previewMode === "empty" || !mapped) {
     return (
       <div className={styles.page}>
         <div className={styles.infoCard}>
