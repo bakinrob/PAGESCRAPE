@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { MapPin, Phone } from "lucide-react";
 
 import type { MappedContentBlock, MappedPagePayload, MappedSection } from "@/lib/types";
+import { buildTemplatePackageBaseHref, injectTemplatePackageBase } from "@/lib/package-preview";
 import { choosePreviewMode } from "@/lib/workspace-view-state";
 
 import styles from "./template-preview.module.css";
@@ -157,12 +158,18 @@ function PackagePreviewFrame({
   templatePath,
   confidence,
   destinationLabel,
+  templatePackageId,
 }: {
   html: string;
   templatePath: string;
   confidence: number;
   destinationLabel?: string;
+  templatePackageId?: string;
 }) {
+  const previewDocument = templatePackageId
+    ? injectTemplatePackageBase(html, buildTemplatePackageBaseHref(templatePackageId, templatePath))
+    : html;
+
   return (
     <div className={`${styles.page} ${styles.packagePreviewShell}`}>
       <div className={styles.packagePreviewHeader}>
@@ -180,11 +187,34 @@ function PackagePreviewFrame({
       <div className={styles.packagePreviewFrame}>
         <iframe
           title={`Package preview for ${templatePath}`}
-          srcDoc={html}
+          srcDoc={previewDocument}
           className={styles.packagePreviewIframe}
           sandbox=""
         />
       </div>
+    </div>
+  );
+}
+
+function PendingPackagePreview({
+  mapped,
+  templatePath,
+}: {
+  mapped?: MappedPagePayload;
+  templatePath: string;
+}) {
+  return (
+    <div className={styles.pendingPreviewShell}>
+      <div className={styles.pendingPreviewNotice}>
+        <p className={styles.sectionEyebrow}>Destination match found</p>
+        <h3 className={styles.packagePreviewTitle}>Package rebuild output is not available yet.</h3>
+        <p className={styles.cardText}>
+          The workspace matched this page to <strong>{templatePath}</strong>, but the package-driven
+          HTML has not been generated. The mapped fallback stays visible below so the review can
+          continue without pretending this is the final destination render.
+        </p>
+      </div>
+      {mapped ? renderPreviewByType(mapped) : <EmptyState label="No mapped fallback is available for this page yet." />}
     </div>
   );
 }
@@ -839,15 +869,20 @@ export function TemplatePreview({
   rebuilt,
   sourceUrl,
   destinationLabel,
+  templatePackageId,
+  matchedTemplatePath,
 }: {
   mapped?: MappedPagePayload;
   rebuilt?: { html: string; templatePath: string; confidence: number };
   sourceUrl: string;
   destinationLabel?: string;
+  templatePackageId?: string;
+  matchedTemplatePath?: string;
 }) {
   const previewMode = choosePreviewMode({
     rebuiltHtml: rebuilt?.html,
     mappedPage: mapped,
+    matchedTemplatePath,
   });
 
   if (previewMode === "package" && rebuilt) {
@@ -857,8 +892,13 @@ export function TemplatePreview({
         templatePath={rebuilt.templatePath}
         confidence={rebuilt.confidence}
         destinationLabel={destinationLabel}
+        templatePackageId={templatePackageId}
       />
     );
+  }
+
+  if (previewMode === "package_pending" && matchedTemplatePath) {
+    return <PendingPackagePreview mapped={mapped} templatePath={matchedTemplatePath} />;
   }
 
   if (previewMode === "empty" || !mapped) {

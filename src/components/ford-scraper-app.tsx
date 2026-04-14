@@ -330,6 +330,8 @@ export function FordScraperApp() {
     [job?.pairings, selectedPageWithPreview],
   );
   const selectedDestinationLabel = destinationBrandLabel(job);
+  const selectedTemplatePackageId = job?.templatePackage?.id;
+  const packageFallbackVisible = Boolean(selectedPairing && !selectedPageWithPreview?.rebuilt);
 
   const pollJob = useEffectEvent(async () => {
     if (!job?.id) return;
@@ -804,9 +806,9 @@ export function FordScraperApp() {
                       {selectedDestinationLabel}
                     </h2>
                     <p className="mt-3 text-sm leading-7 text-slate-400">
-                      This side follows the uploaded destination package contract rather than a
-                      generic preview stack. SEO fields are preserved automatically from the source
-                      page.
+                      {packageFallbackVisible
+                        ? "A destination template match exists for this page, but the package-driven HTML is still unavailable. The mapped fallback stays visible below so review can continue without hiding that gap."
+                        : "This side follows the uploaded destination package contract rather than a generic preview stack. SEO fields are preserved automatically from the source page."}
                     </p>
                     <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                       {selectedPairing
@@ -823,6 +825,8 @@ export function FordScraperApp() {
                       rebuilt={selectedPageWithPreview.rebuilt}
                       sourceUrl={selectedPageWithPreview.url}
                       destinationLabel={selectedDestinationLabel}
+                      templatePackageId={selectedTemplatePackageId}
+                      matchedTemplatePath={selectedPairing?.templatePath}
                     />
                   </div>
                 </section>
@@ -882,6 +886,8 @@ export function FordScraperApp() {
                     rebuilt={selectedPageWithPreview.rebuilt}
                     sourceUrl={selectedPageWithPreview.url}
                     destinationLabel={selectedDestinationLabel}
+                    templatePackageId={selectedTemplatePackageId}
+                    matchedTemplatePath={selectedPairing?.templatePath}
                   />
                 </div>
               </section>

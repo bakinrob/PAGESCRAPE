@@ -32,6 +32,10 @@ describe("choosePreviewMode", () => {
     expect(choosePreviewMode({ mappedPage: {} as never })).toBe("mapped");
   });
 
+  it("returns package_pending when a template match exists without rebuilt html", () => {
+    expect(choosePreviewMode({ matchedTemplatePath: "templates/home.html", mappedPage: {} as never })).toBe("package_pending");
+  });
+
   it("returns empty when no rebuild data exists", () => {
     expect(choosePreviewMode({})).toBe("empty");
   });
