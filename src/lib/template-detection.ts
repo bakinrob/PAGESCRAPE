@@ -110,7 +110,10 @@ function normalizeText(value: string) {
 function isPhraseMatch(source: string, phrase: string) {
   const normalizedSource = normalizeText(source);
   const normalizedPhrase = normalizeText(phrase);
-  return normalizedSource.includes(normalizedPhrase);
+  if (!normalizedSource || !normalizedPhrase) {
+    return false;
+  }
+  return ` ${normalizedSource} `.includes(` ${normalizedPhrase} `);
 }
 
 function uniqueStrings(values: string[]) {
@@ -172,6 +175,83 @@ function pickBestBrand(signals: Array<{ source: keyof typeof SOURCE_WEIGHTS; tex
     confidence: Math.min(0.99, Number((best.score / (best.score + 0.75)).toFixed(2))),
     reasons: best.reasons,
   } satisfies TemplateBrandInference;
+}
+
+function aggregatePackageBrand(
+  files: TemplateFileDetection[],
+  manifest?: { brand?: string; oem?: string },
+) {
+  const manifestBrand = manifest?.brand?.trim();
+  const manifestOem = manifest?.oem?.trim();
+  const manifestValue = manifestBrand || manifestOem;
+
+  const ranked = new Map<
+    string,
+    {
+      brand?: string;
+      oem?: string;
+      score: number;
+      reasons: string[];
+    }
+  >();
+
+  for (const file of files) {
+    if (!file.brand?.brand && !file.brand?.oem) {
+      continue;
+    }
+
+    const key = `${file.brand.brand || ""}|${file.brand.oem || ""}`;
+    const current = ranked.get(key);
+    ranked.set(key, {
+      brand: file.brand.brand,
+      oem: file.brand.oem,
+      score: (current?.score ?? 0) + file.brand.confidence,
+      reasons: uniqueStrings([
+        ...(current?.reasons ?? []),
+        `file ${file.path} inferred ${file.brand.brand || file.brand.oem}`,
+      ]),
+    });
+  }
+
+  const top = [...ranked.values()].sort((left, right) => right.score - left.score)[0];
+
+  if (manifestValue && (!top || manifestValue === top.brand || manifestValue === top.oem)) {
+    return {
+      brand: manifestBrand || top?.brand || manifestOem,
+      oem: manifestOem || manifestBrand || top?.oem || top?.brand,
+      source: "manifest" as const,
+      confidence: top ? Math.min(0.99, Number((0.85 + top.score / (top.score + 1)).toFixed(2))) : 0.95,
+      reasons: uniqueStrings([
+        "manifest brand/oem",
+        ...(top?.reasons ?? []),
+      ]),
+    };
+  }
+
+  if (top) {
+    return {
+      brand: top.brand,
+      oem: top.oem || top.brand,
+      source: "heuristic" as const,
+      confidence: Math.min(0.98, Number((top.score / (top.score + 0.75)).toFixed(2))),
+      reasons: uniqueStrings([
+        ...top.reasons,
+        ...(manifestValue ? [`manifest disagrees with ${manifestValue}`] : []),
+      ]),
+    };
+  }
+
+  if (manifestValue) {
+    return {
+      brand: manifestBrand || manifestOem,
+      oem: manifestOem || manifestBrand,
+      source: "manifest" as const,
+      confidence: 0.7,
+      reasons: ["manifest brand/oem"],
+    };
+  }
+
+  return undefined;
 }
 
 function extractSignals(input: TemplateFileInput) {
@@ -352,31 +432,17 @@ export async function detectTemplateFiles(packageId: string): Promise<TemplatePa
     const htmlPath = path.join(stored.extractedRoot, file.path);
     const html = await readFile(htmlPath, "utf8");
     files.push(
-      classifyTemplateFile(
-        {
-          path: file.path,
-          html,
-        },
-        {
-          manifest: {
-            brand: stored.templatePackage.inferredBrand,
-            oem: stored.templatePackage.inferredOem,
-          },
-        },
-      ),
+      classifyTemplateFile({
+        path: file.path,
+        html,
+      }),
     );
   }
 
-  const brand =
-    stored.templatePackage.inferredBrand || stored.templatePackage.inferredOem
-      ? {
-          brand: stored.templatePackage.inferredBrand || stored.templatePackage.inferredOem,
-          oem: stored.templatePackage.inferredOem || stored.templatePackage.inferredBrand,
-          source: "manifest" as const,
-          confidence: 1,
-          reasons: ["manifest brand/oem"],
-        }
-      : files.find((file) => file.brand)?.brand;
+  const brand = aggregatePackageBrand(files, {
+    brand: stored.templatePackage.inferredBrand,
+    oem: stored.templatePackage.inferredOem,
+  });
 
   return {
     packageId: stored.packageId,

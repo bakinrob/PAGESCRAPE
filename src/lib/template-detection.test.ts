@@ -62,6 +62,25 @@ describe("classifyTemplateFile", () => {
     });
     expect(result.alternatives.length).toBeGreaterThan(0);
   });
+
+  it("does not infer short aliases from unrelated substrings", () => {
+    const result = classifyTemplateFile({
+      path: "about/index.html",
+      html: `
+        <html>
+          <head><title>Premium Dealer Experience</title></head>
+          <body>
+            <main>
+              <h1>Welcome to our premium dealership</h1>
+              <p>We provide a premium experience with no shortcuts.</p>
+            </main>
+          </body>
+        </html>
+      `,
+    });
+
+    expect(result.brand).toBeUndefined();
+  });
 });
 
 describe("detectTemplateFiles", () => {
@@ -121,8 +140,38 @@ describe("detectTemplateFiles", () => {
       brand: "Honda",
       oem: "Honda",
       source: "manifest",
-      confidence: 1,
-      reasons: ["manifest brand/oem"],
+      confidence: expect.any(Number),
+      reasons: expect.arrayContaining(["manifest brand/oem"]),
+    });
+  });
+
+  it("prefers strong html evidence when stored manifest metadata disagrees", async () => {
+    const zip = new JSZip();
+    zip.file("home.html", "<html><head><title>Honda Dealer Home</title></head><body><h1>Honda Dealer Home</h1><img alt='Honda logo' src='/assets/honda.svg' /></body></html>");
+    zip.file("service.html", "<html><head><title>Honda Service</title></head><body><h1>Honda Service</h1><p>Schedule maintenance.</p></body></html>");
+
+    const buffer = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+    const packageMeta = await indexTemplatePackage(buffer, "dealer-template.zip");
+    const stored = await saveTemplatePackage({
+      packageId: packageMeta.id,
+      filename: packageMeta.filename,
+      buffer,
+      metadata: {
+        ...packageMeta,
+        inferredBrand: "Ford",
+        inferredOem: "Ford",
+      },
+    });
+    createdPackageRoots.push(stored.packageRoot);
+
+    const result = await detectTemplateFiles(packageMeta.id);
+
+    expect(result.brand).toEqual({
+      brand: "Honda",
+      oem: "Honda",
+      source: "heuristic",
+      confidence: expect.any(Number),
+      reasons: expect.arrayContaining(["manifest disagrees with Ford"]),
     });
   });
 });
