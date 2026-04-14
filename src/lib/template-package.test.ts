@@ -1,7 +1,9 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
+import { readFile, rm } from "node:fs/promises";
 
 import { indexTemplatePackage } from "@/lib/template-package";
+import { saveTemplatePackage } from "@/lib/template-package-store";
 
 describe("indexTemplatePackage", () => {
   it("indexes files and detects a manifest from an in-memory zip", async () => {
@@ -30,15 +32,42 @@ describe("indexTemplatePackage", () => {
     ]);
   });
 
-  it("throws when the chosen manifest is malformed", async () => {
+  it("keeps indexing and reports a warning when the chosen manifest is malformed", async () => {
     const zip = new JSZip();
     zip.file("manifest.json", "{invalid");
     zip.file("pages/home.html", "<html><body><h1>Home</h1></body></html>");
 
     const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    const result = await indexTemplatePackage(buffer, "broken-template.zip");
 
-    await expect(indexTemplatePackage(buffer, "broken-template.zip")).rejects.toThrow(
-      "Template package manifest is invalid JSON",
-    );
+    expect(result.manifestPath).toBe("manifest.json");
+    expect(result.inferredBrand).toBeUndefined();
+    expect(result.inferredOem).toBeUndefined();
+    expect(result.warnings).toEqual([
+      expect.stringContaining("Manifest detected at manifest.json"),
+    ]);
+  });
+
+  it("stores the original archive and extracted files inside the package workspace", async () => {
+    const zip = new JSZip();
+    zip.file("pages/home.html", "<html><body><h1>Home</h1></body></html>");
+
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+    const metadata = await indexTemplatePackage(buffer, "dealer-template.zip");
+    const saved = await saveTemplatePackage({
+      packageId: "../unsafe-package-id",
+      filename: "../unsafe-name.zip",
+      buffer,
+      metadata,
+    });
+
+    const extractedHtml = await readFile(`${saved.extractedRoot}\\pages\\home.html`, "utf8");
+
+    expect(saved.packageRoot).toContain("output");
+    expect(saved.packageRoot).toContain("template-packages");
+    expect(saved.archivePath.endsWith("unsafe-name.zip")).toBe(true);
+    expect(extractedHtml).toContain("<h1>Home</h1>");
+
+    await rm(saved.packageRoot, { recursive: true, force: true });
   });
 });

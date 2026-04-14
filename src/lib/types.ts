@@ -221,6 +221,7 @@ export interface TemplatePackageState {
   files: TemplatePackageFile[];
   inferredBrand?: string;
   inferredOem?: string;
+  warnings?: string[];
 }
 
 export interface TemplateTemplateMatch {

@@ -108,6 +108,7 @@ export async function indexTemplatePackage(
   const manifestText = manifestFile ? await manifestFile.async("string") : null;
   let inferredBrand: string | undefined;
   let inferredOem: string | undefined;
+  const warnings: string[] = [];
 
   if (manifestText) {
     try {
@@ -120,8 +121,8 @@ export async function indexTemplatePackage(
       inferredBrand = manifest.brand || manifest.destinationBrand;
       inferredOem = manifest.oem || manifest.destinationOem;
     } catch (error) {
-      throw new Error(
-        `Template package manifest is invalid JSON at ${manifestPath}: ${error instanceof Error ? error.message : "unknown parse error"}`,
+      warnings.push(
+        `Manifest detected at ${manifestPath}, but it could not be parsed as JSON: ${error instanceof Error ? error.message : "unknown parse error"}`,
       );
     }
   }
@@ -134,5 +135,6 @@ export async function indexTemplatePackage(
     files,
     inferredBrand,
     inferredOem,
+    warnings,
   };
 }
