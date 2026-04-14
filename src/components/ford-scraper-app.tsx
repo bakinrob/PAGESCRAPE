@@ -496,14 +496,22 @@ export function FordScraperApp() {
         method: "POST",
         body: formData,
       });
-      const payload = await response.json();
+      const payload = (await response.json()) as {
+        templatePackage?: TemplatePackageState;
+        error?: string;
+      };
 
       if (!response.ok) {
         setPackageError(payload.error || "Destination package upload failed.");
         return;
       }
 
-      setUploadedPackage(payload as TemplatePackageState);
+      if (!payload.templatePackage) {
+        setPackageError("Template package metadata was missing from the upload response.");
+        return;
+      }
+
+      setUploadedPackage(payload.templatePackage);
     } catch (error) {
       setPackageError(error instanceof Error ? error.message : "Destination package upload failed.");
     } finally {
@@ -568,7 +576,8 @@ export function FordScraperApp() {
                           ref={packageInputRef}
                           type="file"
                           accept=".zip,application/zip"
-                          className="hidden"
+                          className="sr-only"
+                          aria-label="Destination template package zip"
                           onChange={handlePackageUpload}
                         />
                         <button
