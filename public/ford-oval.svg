@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 256" role="img" aria-labelledby="title desc">
+  <title id="title">Ford Oval</title>
+  <desc id="desc">Blue oval badge used as a Ford brand mark</desc>
+  <defs>
+    <linearGradient id="fordBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0058a8" />
+      <stop offset="100%" stop-color="#003478" />
+    </linearGradient>
+  </defs>
+  <ellipse cx="256" cy="128" rx="244" ry="116" fill="#ffffff" />
+  <ellipse cx="256" cy="128" rx="236" ry="108" fill="url(#fordBlue)" />
+  <ellipse cx="256" cy="128" rx="214" ry="86" fill="none" stroke="#ffffff" stroke-width="10" opacity="0.95" />
+  <text
+    x="256"
+    y="148"
+    fill="#ffffff"
+    font-family="Brush Script MT, Segoe Script, cursive"
+    font-size="88"
+    font-weight="700"
+    text-anchor="middle"
+  >
+    Ford
+  </text>
+</svg>

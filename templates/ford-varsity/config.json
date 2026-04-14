@@ -1,0 +1,9 @@
+{
+  "id": "ford-varsity",
+  "displayName": "Ford — Varsity Reference",
+  "brand": "Ford",
+  "status": "active",
+  "builtIn": true,
+  "createdAt": "2026-04-13T00:00:00.000Z",
+  "notes": "Reference Ford slot system audited from Varsity Ford and other dealer sites. Used as the default mapping engine for new templates until they ship their own slot definitions."
+}

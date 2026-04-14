@@ -1,0 +1,251 @@
+import { discoverPagesFromHomepage, processUrl } from "@/lib/pipeline";
+import type { ExportBundle, JobInput, JobState, PageResult } from "@/lib/types";
+
+const globalForJobs = globalThis as typeof globalThis & {
+  fordScraperJobs?: Map<string, JobState>;
+};
+
+const jobStore = globalForJobs.fordScraperJobs ?? new Map<string, JobState>();
+globalForJobs.fordScraperJobs = jobStore;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createInitialPages(urls: string[]): PageResult[] {
+  return urls.map((url, index) => ({
+    id: `${index + 1}-${Buffer.from(url).toString("base64url").slice(0, 10)}`,
+    url,
+    stage: "queued",
+    statusLabel: "Queued",
+  }));
+}
+
+export function createJob(input: JobInput) {
+  const id = crypto.randomUUID();
+  const createdAt = nowIso();
+
+  const job: JobState = {
+    id,
+    status: "queued",
+    createdAt,
+    updatedAt: createdAt,
+    input,
+    progress: {
+      completed: 0,
+      total: 0,
+    },
+    pages: [],
+    warnings: [],
+  };
+
+  jobStore.set(id, job);
+  return job;
+}
+
+export function getJob(jobId: string) {
+  return jobStore.get(jobId);
+}
+
+function patchJob(jobId: string, updater: (job: JobState) => JobState) {
+  const existing = jobStore.get(jobId);
+  if (!existing) {
+    return;
+  }
+
+  const updated = updater(existing);
+  updated.updatedAt = nowIso();
+  jobStore.set(jobId, updated);
+}
+
+export function startJob(jobId: string) {
+  const job = jobStore.get(jobId);
+  if (!job || job.status !== "queued") {
+    return;
+  }
+
+  void runJob(jobId);
+}
+
+async function runJob(jobId: string) {
+  try {
+    patchJob(jobId, (job) => ({ ...job, status: "scraping" }));
+
+    const job = jobStore.get(jobId);
+    if (!job) {
+      return;
+    }
+
+    if (job.input.inputMode === "homepage") {
+      patchJob(jobId, (snapshot) => ({
+        ...snapshot,
+        warnings: [...snapshot.warnings, "Discovering core static CMS pages from homepage navigation."],
+      }));
+
+      const discovery = await discoverPagesFromHomepage(job.input.homepageUrl);
+
+      patchJob(jobId, (snapshot) => ({
+        ...snapshot,
+        input: {
+          ...snapshot.input,
+          homepageUrl: discovery.homepageUrl,
+          discoveredUrls: discovery.discoveredUrls,
+        },
+        pages: createInitialPages(discovery.discoveredUrls),
+        progress: {
+          completed: 0,
+          total: discovery.discoveredUrls.length,
+        },
+        warnings: [
+          ...snapshot.warnings,
+          ...discovery.warnings.filter((warning, index, list) => list.indexOf(warning) === index),
+        ],
+      }));
+    } else {
+      const manualUrls = Array.from(new Set(job.input.manualUrls));
+      patchJob(jobId, (snapshot) => ({
+        ...snapshot,
+        input: {
+          ...snapshot.input,
+          discoveredUrls: manualUrls,
+        },
+        pages: createInitialPages(manualUrls),
+        progress: {
+          completed: 0,
+          total: manualUrls.length,
+        },
+        warnings: [
+          ...snapshot.warnings,
+          "Processing exact static page URLs provided by the operator.",
+        ],
+      }));
+    }
+
+    const discoveredJob = jobStore.get(jobId);
+    if (!discoveredJob) {
+      return;
+    }
+
+    for (let index = 0; index < discoveredJob.pages.length; index += 1) {
+      const currentUrl = discoveredJob.input.discoveredUrls[index];
+
+      patchJob(jobId, (snapshot) => {
+        const pages = [...snapshot.pages];
+        pages[index] = {
+          ...pages[index],
+          stage: "discovering",
+          statusLabel:
+            snapshot.input.inputMode === "homepage"
+              ? index === 0
+                ? "Homepage discovered"
+                : "Navigation page discovered"
+              : "Selected page queued for rebuild",
+        };
+        return { ...snapshot, pages };
+      });
+
+      patchJob(jobId, (snapshot) => {
+        const pages = [...snapshot.pages];
+        pages[index] = {
+          ...pages[index],
+          stage: "fetching",
+          statusLabel: "Fetching source",
+        };
+        return { ...snapshot, pages };
+      });
+
+      const result = await processUrl({
+        dealerName: discoveredJob.input.dealerName || "Dealer",
+        url: currentUrl,
+        seoLock: discoveredJob.input.seoLock,
+        oemPreset: discoveredJob.input.oemPreset,
+        updateStage: (stage, label) => {
+          patchJob(jobId, (snapshot) => {
+            const pages = [...snapshot.pages];
+            pages[index] = {
+              ...pages[index],
+              stage,
+              statusLabel: label,
+            };
+            return { ...snapshot, pages };
+          });
+        },
+      });
+
+      patchJob(jobId, (snapshot) => {
+        const pages = [...snapshot.pages];
+        pages[index] = result;
+        const completed = pages.filter((page) =>
+          ["complete", "unsupported", "error"].includes(page.stage),
+        ).length;
+        const warnings = [
+          ...snapshot.warnings,
+          ...pages.flatMap((page) => page.extracted?.validation.warnings ?? []),
+        ].filter((warning, warningIndex, list) => list.indexOf(warning) === warningIndex);
+
+        return {
+          ...snapshot,
+          pages,
+          progress: {
+            completed,
+            total: snapshot.progress.total,
+          },
+          warnings,
+        };
+      });
+    }
+
+    patchJob(jobId, (snapshot) => ({
+      ...snapshot,
+      status: snapshot.pages.some((page) => page.stage === "error") ? "error" : "complete",
+      error: snapshot.pages.find((page) => page.stage === "error")?.error,
+    }));
+  } catch (error) {
+    patchJob(jobId, (snapshot) => ({
+      ...snapshot,
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown job error",
+      warnings: [
+        ...snapshot.warnings,
+        error instanceof Error ? error.message : "Unknown job error",
+      ].filter((warning, warningIndex, list) => list.indexOf(warning) === warningIndex),
+    }));
+  }
+}
+
+export function getExportBundle(jobId: string): ExportBundle | undefined {
+  const job = jobStore.get(jobId);
+  if (!job) {
+    return undefined;
+  }
+
+  const extractedPages = job.pages
+    .map((page) => page.extracted)
+    .filter((page): page is NonNullable<PageResult["extracted"]> => Boolean(page));
+
+  const mappedPages = job.pages
+    .map((page) => page.mapped)
+    .filter((page): page is NonNullable<PageResult["mapped"]> => Boolean(page));
+
+  const unsupportedPages = job.pages.filter((page) => page.stage === "unsupported").length;
+
+  return {
+      manifest: {
+      jobId: job.id,
+      dealerName: job.input.dealerName || "Ford Dealer",
+      inputMode: job.input.inputMode,
+      homepageUrl: job.input.homepageUrl,
+      manualUrls: job.input.manualUrls,
+      oemPreset: job.input.oemPreset,
+      seoLock: job.input.seoLock,
+      scrapedAt: job.updatedAt,
+      totalUrls: job.input.discoveredUrls.length,
+      completedPages: mappedPages.length,
+      unsupportedPages,
+      discoveredUrls: job.input.discoveredUrls,
+      warnings: job.warnings,
+    },
+    extractedPages,
+    mappedPages,
+  };
+}
