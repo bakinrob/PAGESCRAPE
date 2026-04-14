@@ -39,7 +39,8 @@ export async function POST(request: Request) {
         status: "ready",
         warnings: templatePackage.warnings ?? [],
       },
-      storage,
+      packageId: templatePackage.id,
+      packageFiles: storage ? templatePackage.files.length : templatePackage.files.length,
     });
   } catch (error) {
     return NextResponse.json(

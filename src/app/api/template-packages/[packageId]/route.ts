@@ -32,8 +32,6 @@ export async function GET(
         : undefined,
     storage: {
       packageId: stored.packageId,
-      packageRoot: stored.packageRoot,
-      extractedRoot: stored.extractedRoot,
       archiveFilename: stored.archiveFilename,
       files: stored.files,
     },

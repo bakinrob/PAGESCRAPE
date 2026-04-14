@@ -110,7 +110,10 @@ export function createJob(input: CreateJobInput) {
     status: "queued",
     createdAt,
     updatedAt: createdAt,
-    input,
+    input: {
+      ...input,
+      templatePackageId: input.templatePackageId,
+    },
     progress: {
       completed: 0,
       total: 0,

@@ -205,6 +205,7 @@ export interface JobInput {
   discoveredUrls: string[];
   seoLock: boolean;
   oemPreset: string;
+  templatePackageId?: string;
 }
 
 export interface TemplatePackageFile {
