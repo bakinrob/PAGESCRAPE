@@ -2,12 +2,15 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { discoverPagesFromHomepage, processUrl } from "@/lib/pipeline";
+import { detectTemplateFiles } from "@/lib/template-detection";
 import { classifyPackagePath } from "@/lib/template-package";
+import { pairSourcePagesToTemplates } from "@/lib/template-pairing";
 import type {
   ExportBundle,
   JobInput,
   JobState,
   PageResult,
+  SupportedPageType,
   TemplatePackageFile,
   TemplatePackageState,
 } from "@/lib/types";
@@ -36,6 +39,13 @@ function createInitialPages(urls: string[]): PageResult[] {
 function safePackageId(packageId: string) {
   const base = path.basename(packageId).replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").trim();
   return base || "template-package";
+}
+
+function uniqueStrings(values: string[]) {
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
 }
 
 async function listExtractedFiles(extractedRoot: string, prefix = ""): Promise<TemplatePackageFile[]> {
@@ -91,6 +101,46 @@ export async function readStoredTemplatePackage(packageId: string) {
   } catch {
     return undefined;
   }
+}
+
+function buildPairingSources(job: JobState) {
+  return job.pages.flatMap((page) => {
+    const classification = page.extracted?.classification;
+    if (!classification?.supported) {
+      return [];
+    }
+
+    return [
+      {
+        pageId: page.id,
+        pageType: classification.page_type as SupportedPageType,
+        confidence: classification.confidence,
+        reasons: uniqueStrings([
+          ...classification.matched_signals,
+          ...classification.ambiguity_notes,
+          ...(page.extracted?.validation.warnings ?? []),
+        ]),
+      },
+    ];
+  });
+}
+
+function buildPairingWarnings(
+  pairings: JobState["pairings"],
+  destinationBrand: JobState["destinationBrand"],
+) {
+  return uniqueStrings([
+    ...(destinationBrand?.source === "heuristic" && destinationBrand.brand
+      ? [`Destination brand inferred heuristically as ${destinationBrand.brand}.`]
+      : []),
+    ...pairings.flatMap((pairing) =>
+      pairing.reasons.some((reason) => reason.includes("nearest confidence fallback"))
+        ? [`Fallback pairing used for ${pairing.pageId} -> ${pairing.templatePath}.`]
+        : pairing.confidence < 0.7
+          ? [`Low-confidence pairing for ${pairing.pageId} -> ${pairing.templatePath}.`]
+          : [],
+    ),
+  ]);
 }
 
 type CreateJobInput = JobInput & {
@@ -296,6 +346,36 @@ async function runJob(jobId: string) {
           warnings,
         };
       });
+    }
+
+    const pairedJob = jobStore.get(jobId);
+    if (!pairedJob) {
+      return;
+    }
+
+    if (pairedJob.templatePackage) {
+      try {
+        const detected = await detectTemplateFiles(pairedJob.templatePackage.id);
+        const sourcePages = buildPairingSources(pairedJob);
+        const pairings = pairSourcePagesToTemplates(sourcePages, detected.files);
+        const destinationBrand = detected.brand ?? pairedJob.destinationBrand;
+        const pairingWarnings = buildPairingWarnings(pairings, destinationBrand);
+
+        patchJob(jobId, (snapshot) => ({
+          ...snapshot,
+          destinationBrand,
+          pairings,
+          warnings: uniqueStrings([...snapshot.warnings, ...pairingWarnings]),
+        }));
+      } catch (error) {
+        patchJob(jobId, (snapshot) => ({
+          ...snapshot,
+          warnings: uniqueStrings([
+            ...snapshot.warnings,
+            `Template pairing unavailable: ${error instanceof Error ? error.message : "Unknown pairing error"}.`,
+          ]),
+        }));
+      }
     }
 
     patchJob(jobId, (snapshot) => ({
