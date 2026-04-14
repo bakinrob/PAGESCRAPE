@@ -147,7 +147,9 @@ function updateHead($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
     if (title.length > 0) {
       title.text(seo.title);
     } else {
-      head.append(`<title>${seo.title}</title>`);
+      const titleNode = $("<title></title>");
+      titleNode.text(seo.title);
+      head.append(titleNode);
     }
   }
 
@@ -167,7 +169,10 @@ function updateHead($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
       meta.attr("content", value);
       continue;
     }
-    head.append(`<meta ${attr}="${key}" content="${value}">`);
+    const metaNode = $("<meta />");
+    metaNode.attr(attr, key);
+    metaNode.attr("content", value);
+    head.append(metaNode);
   }
 
   if (seo.canonical_url) {
@@ -175,7 +180,10 @@ function updateHead($: ReturnType<typeof load>, mappedPage: MappedPagePayload) {
     if (canonical.length > 0) {
       canonical.attr("href", seo.canonical_url);
     } else {
-      head.append(`<link rel="canonical" href="${seo.canonical_url}">`);
+      const canonicalNode = $("<link />");
+      canonicalNode.attr("rel", "canonical");
+      canonicalNode.attr("href", seo.canonical_url);
+      head.append(canonicalNode);
     }
   }
 }
@@ -188,17 +196,19 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
     return;
   }
 
-  const hero = firstExistingSelection($, [
+  let hero = firstExistingSelection($, [
     '[class*="hero"]',
     '[id*="hero"]',
     '[class*="masthead"]',
     '[class*="banner"]',
-    "main section",
-    "section",
   ]);
 
   if (!hero) {
-    return;
+    const body = ensureBody($);
+    const main = firstExistingSelection($, ["main", "article", '[role="main"]']) ?? body;
+    const generatedHero = $("<section data-rebuild-generated=\"hero\"></section>");
+    main.prepend(generatedHero);
+    hero = generatedHero;
   }
 
   const headingText =
@@ -213,7 +223,9 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
   if (heroHeading.length > 0) {
     heroHeading.text(headingText);
   } else {
-    hero.prepend(`<h1>${headingText}</h1>`);
+    const headingNode = $("<h1></h1>");
+    headingNode.text(headingText);
+    hero.prepend(headingNode);
   }
 
   if (paragraphText) {
@@ -221,7 +233,9 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
     if (heroParagraph.length > 0) {
       heroParagraph.text(paragraphText);
     } else {
-      hero.append(`<p>${paragraphText}</p>`);
+      const paragraphNode = $("<p></p>");
+      paragraphNode.text(paragraphText);
+      hero.append(paragraphNode);
     }
   }
 
@@ -231,9 +245,11 @@ function updateHeroRegion($: ReturnType<typeof load>, mappedPage: MappedPagePayl
       heroCta.text(cta.label);
       heroCta.attr("href", sanitizeHref(cta.href));
     } else {
-      hero.append(
-        `<a class="rebuild-cta" href="${escapeHtml(sanitizeHref(cta.href))}">${escapeHtml(cta.label)}</a>`,
-      );
+      const ctaNode = $("<a></a>");
+      ctaNode.addClass("rebuild-cta");
+      ctaNode.attr("href", sanitizeHref(cta.href));
+      ctaNode.text(cta.label);
+      hero.append(ctaNode);
     }
   }
 }
