@@ -6,6 +6,7 @@ import { rebuildDestinationHtml } from "@/lib/destination-rebuild";
 import { detectTemplateFiles } from "@/lib/template-detection";
 import { classifyPackagePath } from "@/lib/template-package";
 import { pairSourcePagesToTemplates } from "@/lib/template-pairing";
+import { buildNeedsReviewWarnings, validatePairing } from "@/lib/workspace-validation";
 import type {
   ExportBundle,
   JobInput,
@@ -417,8 +418,34 @@ async function runJob(jobId: string) {
           destinationBrand,
           pairings,
           pages: snapshot.pages.map((page) => {
+            const pairing = pairings.find((candidate) => candidate.pageId === page.id);
             const rebuilt = rebuilds.find((entry) => entry.pageId === page.id)?.rebuilt;
-            return rebuilt ? { ...page, rebuilt } : page;
+            if (!pairing) {
+              return rebuilt ? { ...page, rebuilt } : page;
+            }
+
+            const reviewWarnings = buildNeedsReviewWarnings({ page, pairing });
+            const pairingValidation = validatePairing(pairing);
+            const extracted =
+              page.extracted && reviewWarnings.length > 0
+                ? {
+                    ...page.extracted,
+                    validation: {
+                      ...page.extracted.validation,
+                      warnings: uniqueStrings([...page.extracted.validation.warnings, ...reviewWarnings]),
+                    },
+                  }
+                : page.extracted;
+
+            return {
+              ...page,
+              extracted,
+              rebuilt: rebuilt ?? page.rebuilt,
+              statusLabel:
+                page.stage === "complete" && pairingValidation.needsReview
+                  ? "Needs review"
+                  : page.statusLabel,
+            };
           }),
           warnings: uniqueStrings([...snapshot.warnings, ...pairingWarnings, ...rebuildWarnings]),
         }));
