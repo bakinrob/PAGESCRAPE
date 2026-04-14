@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { createJob, startJob } from "@/lib/job-store";
+import { createJob, readStoredTemplatePackage, startJob } from "@/lib/job-store";
 import { inferDealerNameFromHomepage } from "@/lib/pipeline";
-import { templateExists } from "@/lib/templates-store";
+import { listTemplates } from "@/lib/templates-store";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     manualUrls?: string[];
     seoLock?: boolean;
     oemPreset?: string;
+    templatePackageId?: string;
   };
 
   const inputMode = payload.inputMode === "manual_urls" ? "manual_urls" : "homepage";
@@ -42,16 +43,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "All URLs must be valid absolute URLs." }, { status: 400 });
   }
 
+  const effectiveHomepageUrl = homepageUrl || manualUrls[0];
+  const templatePackageId = payload.templatePackageId?.trim();
+  const packageTemplate =
+    templatePackageId ? await readStoredTemplatePackage(templatePackageId) : undefined;
+
+  if (templatePackageId && !packageTemplate) {
+    return NextResponse.json(
+      { error: `Template package "${templatePackageId}" was not found.` },
+      { status: 404 },
+    );
+  }
+
   const requestedPreset = payload.oemPreset?.trim() || "dealer-static-reference";
-  const presetIsKnown = await templateExists(requestedPreset);
-  if (!presetIsKnown) {
+  const installedTemplates = await listTemplates();
+  const presetRecord = installedTemplates.find((record) => record.id === requestedPreset);
+
+  if (!packageTemplate && !presetRecord) {
     return NextResponse.json(
       { error: `Template "${requestedPreset}" is not installed. Insert it from the template menu first.` },
       { status: 400 },
     );
   }
-
-  const effectiveHomepageUrl = homepageUrl || manualUrls[0];
 
   const job = createJob({
     inputMode,
@@ -61,6 +74,38 @@ export async function POST(request: Request) {
     discoveredUrls: [],
     seoLock: payload.seoLock ?? true,
     oemPreset: requestedPreset,
+    templatePackageId: packageTemplate?.packageId ?? templatePackageId,
+    templatePackage: packageTemplate?.templatePackage,
+    templateDetection: packageTemplate
+      ? {
+          status: "ready",
+          warnings: packageTemplate.templatePackage.warnings ?? [],
+        }
+      : undefined,
+    destinationBrand: packageTemplate
+      ? packageTemplate.templatePackage.inferredBrand || packageTemplate.templatePackage.inferredOem
+        ? {
+            brand: packageTemplate.templatePackage.inferredBrand,
+            oem: packageTemplate.templatePackage.inferredOem,
+            source: "manifest",
+            confidence: 1,
+          }
+        : presetRecord
+          ? {
+              brand: presetRecord.brand,
+              oem: presetRecord.brand,
+              source: "fallback",
+              confidence: 0.5,
+            }
+          : undefined
+      : presetRecord
+        ? {
+            brand: presetRecord.brand,
+            oem: presetRecord.brand,
+            source: "fallback",
+            confidence: 0.5,
+          }
+        : undefined,
   });
 
   startJob(job.id);

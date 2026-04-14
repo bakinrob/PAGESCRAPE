@@ -1,5 +1,16 @@
+import { readdir, readFile, stat } from "node:fs/promises";
+import path from "node:path";
+
 import { discoverPagesFromHomepage, processUrl } from "@/lib/pipeline";
-import type { ExportBundle, JobInput, JobState, PageResult } from "@/lib/types";
+import { classifyPackagePath } from "@/lib/template-package";
+import type {
+  ExportBundle,
+  JobInput,
+  JobState,
+  PageResult,
+  TemplatePackageFile,
+  TemplatePackageState,
+} from "@/lib/types";
 
 const globalForJobs = globalThis as typeof globalThis & {
   fordScraperJobs?: Map<string, JobState>;
@@ -7,6 +18,7 @@ const globalForJobs = globalThis as typeof globalThis & {
 
 const jobStore = globalForJobs.fordScraperJobs ?? new Map<string, JobState>();
 globalForJobs.fordScraperJobs = jobStore;
+const templatePackagesRoot = path.join(process.cwd(), "output", "template-packages");
 
 function nowIso() {
   return new Date().toISOString();
@@ -21,9 +33,77 @@ function createInitialPages(urls: string[]): PageResult[] {
   }));
 }
 
-export function createJob(input: JobInput) {
+function safePackageId(packageId: string) {
+  const base = path.basename(packageId).replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").trim();
+  return base || "template-package";
+}
+
+async function listExtractedFiles(extractedRoot: string, prefix = ""): Promise<TemplatePackageFile[]> {
+  let entries;
+  try {
+    entries = await readdir(extractedRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const files: TemplatePackageFile[] = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const relativePath = prefix ? path.posix.join(prefix, entry.name) : entry.name;
+    const absolutePath = path.join(extractedRoot, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listExtractedFiles(absolutePath, relativePath)));
+      continue;
+    }
+
+    const stats = await stat(absolutePath);
+    files.push({
+      path: relativePath.replace(/\\/g, "/"),
+      kind: classifyPackagePath(relativePath),
+      size: stats.size,
+    });
+  }
+
+  return files;
+}
+
+export async function readStoredTemplatePackage(packageId: string) {
+  const safeId = safePackageId(packageId);
+  const packageRoot = path.join(templatePackagesRoot, safeId);
+  const extractedRoot = path.join(packageRoot, "extracted");
+  const metadataPath = path.join(packageRoot, "metadata.json");
+
+  try {
+    const raw = await readFile(metadataPath, "utf8");
+    const templatePackage = JSON.parse(raw) as TemplatePackageState;
+    const files = await listExtractedFiles(extractedRoot);
+    const archiveFilename = (await readdir(packageRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".zip"))
+      .sort((left, right) => left.name.localeCompare(right.name))[0]?.name;
+
+    return {
+      templatePackage,
+      packageId: safeId,
+      packageRoot,
+      extractedRoot,
+      archiveFilename,
+      files,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+type CreateJobInput = JobInput & {
+  templatePackageId?: string;
+  templatePackage?: TemplatePackageState;
+  templateDetection?: JobState["templateDetection"];
+  destinationBrand?: JobState["destinationBrand"];
+};
+
+export function createJob(input: CreateJobInput) {
   const id = crypto.randomUUID();
   const createdAt = nowIso();
+  const templatePackage = input.templatePackage;
 
   const job: JobState = {
     id,
@@ -36,6 +116,25 @@ export function createJob(input: JobInput) {
       total: 0,
     },
     pages: [],
+    templatePackage,
+    templateDetection:
+      input.templateDetection ??
+      (templatePackage
+        ? {
+            status: "ready",
+            warnings: templatePackage.warnings ?? [],
+          }
+        : undefined),
+    destinationBrand:
+      input.destinationBrand ??
+      (templatePackage && (templatePackage.inferredBrand || templatePackage.inferredOem)
+        ? {
+            brand: templatePackage.inferredBrand,
+            oem: templatePackage.inferredOem,
+            source: "manifest",
+            confidence: 1,
+          }
+        : undefined),
     pairings: [],
     warnings: [],
   };
