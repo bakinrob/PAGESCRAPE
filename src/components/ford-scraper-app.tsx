@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { TemplatePreview } from "@/components/template-preview";
+import { buildInspectorModel } from "@/lib/inspector-model";
 import { deriveWorkspaceStage } from "@/lib/workspace-view-state";
 import type { InputMode, JobState, PageResult } from "@/lib/types";
 
@@ -189,11 +190,12 @@ function InspectorDrawer({
   if (!page) return null;
 
   const extracted = page.extracted;
-  const warnings = [
-    ...(extracted?.validation.warnings ?? []),
-    ...(preview?.warnings ?? []),
-    ...jobWarnings,
-  ].filter((warning, index, list) => warning && list.indexOf(warning) === index);
+  const inspector = buildInspectorModel({
+    page,
+    pairing,
+    previewWarnings: preview?.warnings,
+    jobWarnings,
+  });
 
   return (
     <>
@@ -211,76 +213,57 @@ function InspectorDrawer({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Template Match</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <p><span className="text-slate-500">Template:</span> {pairing?.templatePath || page.rebuilt?.templatePath || "Awaiting destination match"}</p>
-              <p><span className="text-slate-500">Confidence:</span> {pairing ? `${Math.round(pairing.confidence * 100)}%` : page.rebuilt ? `${Math.round(page.rebuilt.confidence * 100)}%` : "Unavailable"}</p>
-              {pairing?.alternatives.length ? (
-                <div>
-                  <p className="text-slate-500">Alternatives</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {pairing.alternatives.slice(0, 4).map((alternative) => (
-                      <span key={alternative} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
-                        {alternative}
-                      </span>
-                    ))}
-                  </div>
+          {inspector.sections.map((section) => (
+            <div key={section.key} className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">{section.title}</p>
+
+              {section.entries?.length ? (
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  {section.entries.map((entry) => (
+                    <p key={`${section.key}-${entry.label}-${entry.value}`}>
+                      <span className="text-slate-500">{entry.label}:</span> {entry.value}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+
+              {section.badges?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {section.badges.map((badge) => (
+                    <span key={`${section.key}-${badge}`} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              {section.assets ? (
+                <div className="mt-4 space-y-3">
+                  {section.assets.length > 0 ? section.assets.map((asset) => (
+                    <div key={`${section.key}-${asset.detail}`} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-white">{asset.title}</p>
+                        {asset.subtitle ? (
+                          <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">{asset.subtitle}</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 break-all text-xs leading-6 text-slate-400">{asset.detail}</p>
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No {section.title.toLowerCase()} for this page.</p>}
+                </div>
+              ) : null}
+
+              {section.messages ? (
+                <div className="mt-4 space-y-3">
+                  {section.messages.length > 0 ? section.messages.slice(0, 10).map((message) => (
+                    <div key={`${section.key}-${message}`} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      {message}
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No warnings for this page.</p>}
                 </div>
               ) : null}
             </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Assets</p>
-            <div className="mt-4 space-y-3">
-              {extracted?.media.length ? extracted.media.slice(0, 10).map((asset) => (
-                <div key={asset.url} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
-                  <p className="text-sm font-medium text-white">{asset.alt || asset.role}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{asset.role}</p>
-                  <p className="mt-2 break-all text-xs leading-6 text-slate-400">{asset.url}</p>
-                </div>
-              )) : <p className="text-sm text-slate-500">No extracted assets for this page.</p>}
-            </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">SEO</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <p><span className="text-slate-500">Title:</span> {extracted?.seo.title || "Unavailable"}</p>
-              <p><span className="text-slate-500">Meta:</span> {extracted?.seo.meta_description || "Unavailable"}</p>
-              <p><span className="text-slate-500">H1:</span> {extracted?.seo.h1 || "Unavailable"}</p>
-              <p className="break-all"><span className="text-slate-500">Canonical:</span> {extracted?.seo.canonical_url || page.url}</p>
-              <p><span className="text-slate-500">OG title:</span> {extracted?.seo.og_title || "Unavailable"}</p>
-              <p><span className="text-slate-500">OG description:</span> {extracted?.seo.og_description || "Unavailable"}</p>
-            </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Source Signals</p>
-            <div className="mt-4 space-y-3">
-              {(extracted?.links.slice(0, 10) ?? []).map((link) => (
-                <div key={`${link.href}-${link.text}`} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-white">{link.text}</p>
-                    <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">{link.kind}</span>
-                  </div>
-                  <p className="mt-2 break-all text-xs leading-6 text-slate-400">{link.href}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Warnings</p>
-            <div className="mt-4 space-y-3">
-              {warnings.length > 0 ? warnings.slice(0, 10).map((warning) => (
-                <div key={warning} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
-                  {warning}
-                </div>
-              )) : <p className="text-sm text-slate-500">No warnings for this page.</p>}
-            </div>
-          </div>
+          ))}
         </div>
       </aside>
     </>
