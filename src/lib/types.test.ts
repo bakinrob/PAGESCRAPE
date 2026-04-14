@@ -21,13 +21,67 @@ describe("JobState", () => {
         total: 0,
       },
       pages: [],
-      pairings: [],
+      templatePackage: {
+        id: "pkg-1",
+        filename: "dealer-template.zip",
+        uploadedAt: "2026-04-13T00:00:00.000Z",
+        manifestPath: "manifest.json",
+        files: [
+          {
+            path: "index.html",
+            kind: "html",
+            size: 1024,
+          },
+        ],
+        inferredBrand: "Ford",
+        inferredOem: "Ford",
+      },
+      templateDetection: {
+        status: "ready",
+        warnings: ["No manifest found"],
+      },
+      destinationBrand: {
+        brand: "Ford",
+        oem: "Ford",
+        source: "heuristic",
+        confidence: 0.92,
+      },
+      pairings: [
+        {
+          pageId: "page-1",
+          sourcePageType: "service",
+          templatePath: "service.html",
+          confidence: 0.84,
+          reasons: ["filename match"],
+          alternatives: ["index.html"],
+        },
+      ],
       warnings: [],
     };
 
-    expect(job.templatePackage).toBeUndefined();
-    expect(job.templateDetection).toBeUndefined();
-    expect(job.pairings).toBeDefined();
-    expect(job.destinationBrand).toBeUndefined();
+    expect(job.templatePackage?.filename).toBe("dealer-template.zip");
+    expect(job.templatePackage?.files[0]).toMatchObject({
+      path: "index.html",
+      kind: "html",
+      size: 1024,
+    });
+    expect(job.templateDetection).toEqual({
+      status: "ready",
+      warnings: ["No manifest found"],
+    });
+    expect(job.destinationBrand).toEqual({
+      brand: "Ford",
+      oem: "Ford",
+      source: "heuristic",
+      confidence: 0.92,
+    });
+    expect(job.pairings[0]).toEqual({
+      pageId: "page-1",
+      sourcePageType: "service",
+      templatePath: "service.html",
+      confidence: 0.84,
+      reasons: ["filename match"],
+      alternatives: ["index.html"],
+    });
   });
 });

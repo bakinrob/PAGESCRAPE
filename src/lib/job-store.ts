@@ -36,6 +36,7 @@ export function createJob(input: JobInput) {
       total: 0,
     },
     pages: [],
+    pairings: [],
     warnings: [],
   };
 
