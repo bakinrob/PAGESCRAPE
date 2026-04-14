@@ -207,6 +207,31 @@ export interface JobInput {
   oemPreset: string;
 }
 
+export interface TemplatePackageFile {
+  path: string;
+  kind: "html" | "css" | "js" | "asset" | "other";
+  size: number;
+}
+
+export interface TemplatePackageState {
+  id: string;
+  filename: string;
+  uploadedAt: string;
+  manifestPath?: string;
+  files: TemplatePackageFile[];
+  inferredBrand?: string;
+  inferredOem?: string;
+}
+
+export interface TemplateTemplateMatch {
+  pageId: string;
+  sourcePageType: SupportedPageType;
+  templatePath: string;
+  confidence: number;
+  reasons: string[];
+  alternatives: string[];
+}
+
 export interface JobState {
   id: string;
   status: JobStatus;
@@ -218,6 +243,18 @@ export interface JobState {
     total: number;
   };
   pages: PageResult[];
+  templatePackage?: TemplatePackageState;
+  templateDetection?: {
+    status: "idle" | "processing" | "ready" | "error";
+    warnings: string[];
+  };
+  destinationBrand?: {
+    brand?: string;
+    oem?: string;
+    source: "manifest" | "heuristic" | "fallback";
+    confidence: number;
+  };
+  pairings: TemplateTemplateMatch[];
   warnings: string[];
   error?: string;
 }
