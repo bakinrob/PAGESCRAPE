@@ -263,8 +263,8 @@ function InspectorDrawer({
 
 export function FordScraperApp() {
   const [inputMode, setInputMode] = useState<InputMode>("homepage");
-  const [homepageUrl, setHomepageUrl] = useState(sampleHomepage);
-  const [manualUrls, setManualUrls] = useState(sampleManualUrls);
+  const [homepageUrl, setHomepageUrl] = useState("");
+  const [manualUrls, setManualUrls] = useState("");
   const [job, setJob] = useState<JobState | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -434,7 +434,7 @@ export function FordScraperApp() {
             .map((value) => value.trim())
             .filter(Boolean),
           seoLock: true,
-          oemPreset: "ford-varsity",
+          oemPreset: "dealer-static-reference",
         }),
       });
 
@@ -468,8 +468,8 @@ export function FordScraperApp() {
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">
                   Paste one homepage for the guided discovery flow, or switch to exact URLs when you
                   want to target specific static pages. The destination package zip will drive the
-                  rebuilt template experience, while Varsity Ford remains the sample source site for
-                  the demo.
+                  rebuilt template experience, and sample source URLs are optional when you want a
+                  quick demonstration.
                 </p>
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
                   {[
@@ -550,7 +550,7 @@ export function FordScraperApp() {
                         {submitting ? "Starting rebuild" : "Start rebuild"}
                       </button>
                       <button type="button" onClick={() => { setHomepageUrl(sampleHomepage); setManualUrls(sampleManualUrls); }} className="secondary-button">
-                        Load sample inputs
+                        Load sample source
                       </button>
                     </div>
                   </div>
