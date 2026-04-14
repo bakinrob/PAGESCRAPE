@@ -3,6 +3,8 @@ import type { CSSProperties } from "react";
 import { MapPin, Phone } from "lucide-react";
 
 import type { MappedContentBlock, MappedPagePayload, MappedSection } from "@/lib/types";
+import { prepareTemplatePackagePreviewDocument } from "@/lib/package-preview";
+import { choosePreviewMode } from "@/lib/workspace-view-state";
 
 import styles from "./template-preview.module.css";
 
@@ -149,6 +151,75 @@ function ActionButtons({ items, ghost }: { items: Array<{ label: string; href: s
 
 function EmptyState({ label }: { label: string }) {
   return <div className={styles.emptyState}>{label}</div>;
+}
+
+function PackagePreviewFrame({
+  html,
+  templatePath,
+  confidence,
+  destinationLabel,
+  templatePackageId,
+}: {
+  html: string;
+  templatePath: string;
+  confidence: number;
+  destinationLabel?: string;
+  templatePackageId?: string;
+}) {
+  const previewDocument = templatePackageId
+    ? prepareTemplatePackagePreviewDocument(html, {
+        packageId: templatePackageId,
+        templatePath,
+      })
+    : html;
+
+  return (
+    <div className={`${styles.page} ${styles.packagePreviewShell}`}>
+      <div className={styles.packagePreviewHeader}>
+        <div>
+          <p className={styles.sectionEyebrow}>Package-driven rebuild</p>
+          <h3 className={styles.packagePreviewTitle}>
+            {destinationLabel ? `${destinationLabel} destination template` : "Destination template preview"}
+          </h3>
+        </div>
+        <div className={styles.packagePreviewMeta}>
+          <span>{templatePath}</span>
+          <span>{Math.round(confidence * 100)}% match</span>
+        </div>
+      </div>
+      <div className={styles.packagePreviewFrame}>
+        <iframe
+          title={`Package preview for ${templatePath}`}
+          srcDoc={previewDocument}
+          className={styles.packagePreviewIframe}
+          sandbox=""
+        />
+      </div>
+    </div>
+  );
+}
+
+function PendingPackagePreview({
+  mapped,
+  templatePath,
+}: {
+  mapped?: MappedPagePayload;
+  templatePath: string;
+}) {
+  return (
+    <div className={styles.pendingPreviewShell}>
+      <div className={styles.pendingPreviewNotice}>
+        <p className={styles.sectionEyebrow}>Destination match found</p>
+        <h3 className={styles.packagePreviewTitle}>Package rebuild output is not available yet.</h3>
+        <p className={styles.cardText}>
+          The workspace matched this page to <strong>{templatePath}</strong>, but the package-driven
+          HTML has not been generated. The mapped fallback stays visible below so the review can
+          continue without pretending this is the final destination render.
+        </p>
+      </div>
+      {mapped ? renderPreviewByType(mapped) : <EmptyState label="No mapped fallback is available for this page yet." />}
+    </div>
+  );
 }
 
 function HomepageTemplate({ mapped }: { mapped: MappedPagePayload }) {
@@ -492,7 +563,7 @@ function HomepageTemplate({ mapped }: { mapped: MappedPagePayload }) {
           </div>
         </div>
         <div className={`${styles.container} ${styles.footerNote}`}>
-          Rebuilt from the source page using the Ford Varsity migration template.
+          Rebuilt from the source page using the uploaded destination migration template.
         </div>
       </footer>
     </div>
@@ -798,12 +869,42 @@ function renderPreviewByType(mapped: MappedPagePayload) {
 
 export function TemplatePreview({
   mapped,
+  rebuilt,
   sourceUrl,
+  destinationLabel,
+  templatePackageId,
+  matchedTemplatePath,
 }: {
   mapped?: MappedPagePayload;
+  rebuilt?: { html: string; templatePath: string; confidence: number };
   sourceUrl: string;
+  destinationLabel?: string;
+  templatePackageId?: string;
+  matchedTemplatePath?: string;
 }) {
-  if (!mapped) {
+  const previewMode = choosePreviewMode({
+    rebuiltHtml: rebuilt?.html,
+    mappedPage: mapped,
+    matchedTemplatePath,
+  });
+
+  if (previewMode === "package" && rebuilt) {
+    return (
+      <PackagePreviewFrame
+        html={rebuilt.html}
+        templatePath={rebuilt.templatePath}
+        confidence={rebuilt.confidence}
+        destinationLabel={destinationLabel}
+        templatePackageId={templatePackageId}
+      />
+    );
+  }
+
+  if (previewMode === "package_pending" && matchedTemplatePath) {
+    return <PendingPackagePreview mapped={mapped} templatePath={matchedTemplatePath} />;
+  }
+
+  if (previewMode === "empty" || !mapped) {
     return (
       <div className={styles.page}>
         <div className={styles.infoCard}>
@@ -811,7 +912,7 @@ export function TemplatePreview({
           <h3 className={styles.cardHeading}>This page stays visible in review, but it is not rebuilt for v1.</h3>
           <p className={styles.cardText}>
             Inventory search, VDP, checkout, and feed-driven surfaces remain out of scope for the
-            Ford static page migration workflow.
+            static page migration workflow.
           </p>
           <p className={styles.cardText}>{sourceUrl}</p>
         </div>

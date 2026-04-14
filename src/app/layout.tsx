@@ -15,9 +15,9 @@ const bodyFont = Barlow({
 });
 
 export const metadata: Metadata = {
-  title: "Ford Dealer Page Migration",
+  title: "Dealer Page Migration Workspace",
   description:
-    "Rebuild static dealer pages into a provider-ready Ford template with side-by-side review and HTML export.",
+    "Rebuild static dealer pages into provider-ready destination templates with side-by-side review and export handoff bundles.",
 };
 
 export default function RootLayout({

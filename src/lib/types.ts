@@ -179,6 +179,12 @@ export interface MappedPagePayload {
   confidence_notes: string[];
 }
 
+export interface RebuiltPagePayload {
+  templatePath: string;
+  html: string;
+  confidence: number;
+}
+
 export interface SourceSnapshot {
   screenshotDataUrl?: string;
   headingSample: string[];
@@ -195,6 +201,7 @@ export interface PageResult {
   sourceSnapshot?: SourceSnapshot;
   extracted?: ExtractedPagePayload;
   mapped?: MappedPagePayload;
+  rebuilt?: RebuiltPagePayload;
 }
 
 export interface JobInput {
@@ -205,6 +212,33 @@ export interface JobInput {
   discoveredUrls: string[];
   seoLock: boolean;
   oemPreset: string;
+  templatePackageId?: string;
+}
+
+export interface TemplatePackageFile {
+  path: string;
+  kind: "html" | "css" | "js" | "asset" | "other";
+  size: number;
+}
+
+export interface TemplatePackageState {
+  id: string;
+  filename: string;
+  uploadedAt: string;
+  manifestPath?: string;
+  files: TemplatePackageFile[];
+  inferredBrand?: string;
+  inferredOem?: string;
+  warnings?: string[];
+}
+
+export interface TemplateTemplateMatch {
+  pageId: string;
+  sourcePageType: SupportedPageType;
+  templatePath: string;
+  confidence: number;
+  reasons: string[];
+  alternatives: string[];
 }
 
 export interface JobState {
@@ -218,6 +252,18 @@ export interface JobState {
     total: number;
   };
   pages: PageResult[];
+  templatePackage?: TemplatePackageState;
+  templateDetection?: {
+    status: "idle" | "processing" | "ready" | "error";
+    warnings: string[];
+  };
+  destinationBrand?: {
+    brand?: string;
+    oem?: string;
+    source: "manifest" | "heuristic" | "fallback";
+    confidence: number;
+  };
+  pairings: TemplateTemplateMatch[];
   warnings: string[];
   error?: string;
 }

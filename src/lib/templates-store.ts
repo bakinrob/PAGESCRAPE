@@ -15,6 +15,16 @@ const templatesRoot = path.resolve(process.cwd(), "templates");
 
 const builtInTemplates: TemplateRecord[] = [
   {
+    id: "dealer-static-reference",
+    displayName: "Dealer Static Migration Reference",
+    brand: "Reference",
+    status: "active",
+    builtIn: true,
+    createdAt: "2026-04-13T00:00:00.000Z",
+    notes:
+      "OEM-agnostic reference taxonomy for static dealer page migration. Used as the fallback mapping engine until an uploaded destination package or brand-specific mapping is available.",
+  },
+  {
     id: "ford-varsity",
     displayName: "Ford — Varsity Reference",
     brand: "Ford",

@@ -6,6 +6,7 @@ import type {
   MappedContentBlock,
   MappedPagePayload,
   MappedSection,
+  RebuiltPagePayload,
 } from "@/lib/types";
 
 const FORD_OVAL_SVG =
@@ -26,6 +27,14 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
+}
+
+function normalizeArchivePath(value: string) {
+  return value
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .join("/");
 }
 
 function renderBlock(block: MappedContentBlock) {
@@ -407,19 +416,57 @@ function buildAssetsManifest(extractedPages: ExtractedPagePayload[], mappedPages
   });
 }
 
-export async function buildHtmlExportArchive(bundle: ExportBundle) {
+export interface RebuiltExportPage {
+  pageId: string;
+  sourceUrl?: string;
+  rebuilt: RebuiltPagePayload;
+}
+
+export interface HtmlExportArchiveOptions {
+  rebuiltPages?: RebuiltExportPage[];
+}
+
+export async function buildHtmlExportArchive(bundle: ExportBundle, options: HtmlExportArchiveOptions = {}) {
   const zip = new JSZip();
   const base = filenameBase(bundle);
   const assetsManifest = buildAssetsManifest(bundle.extractedPages, bundle.mappedPages);
+  const rebuiltPages = options.rebuiltPages ?? [];
+  const rebuiltBySourceUrl = new Map(
+    rebuiltPages
+      .filter((entry) => entry.sourceUrl)
+      .map((entry) => [entry.sourceUrl as string, entry.rebuilt] as const),
+  );
+  const mapping = bundle.mappedPages.map((page) => {
+    const rebuilt = rebuiltBySourceUrl.get(page.source_url);
+
+    return {
+      sourceUrl: page.source_url,
+      pageType: page.page_type,
+      templatePreset: page.template.preset,
+      templatePath: rebuilt ? normalizeArchivePath(rebuilt.templatePath) : null,
+      rebuilt: Boolean(rebuilt),
+      confidence: rebuilt?.confidence ?? null,
+    };
+  });
+  const summary = {
+    jobId: bundle.manifest.jobId,
+    dealerName: bundle.manifest.dealerName,
+    inputMode: bundle.manifest.inputMode,
+    totalPages: bundle.mappedPages.length,
+    rebuiltPages: rebuiltPages.length,
+    warnings: bundle.manifest.warnings,
+  };
 
   zip.file(
     "README.txt",
     [
-      "Ford static page migration bundle",
+      "Dealer page migration bundle",
       "",
       "Contents:",
-      "- pages/: provider-ready HTML for each supported rebuilt page",
-      "- data/manifest.json: overall job manifest",
+      "- manifest.json: handoff manifest and summary counts",
+      "- pages/: provider-ready HTML for each rebuilt page",
+      "- data/mapping.json: page-to-template mapping summary",
+      "- data/summary.json: export summary",
       "- data/extracted-pages.json: structured source extraction",
       "- data/mapped-pages.json: template-mapped output",
       "- data/assets-manifest.json: referenced image/meta assets per page",
@@ -428,13 +475,21 @@ export async function buildHtmlExportArchive(bundle: ExportBundle) {
     ].join("\n"),
   );
 
-  zip.file("data/manifest.json", JSON.stringify(bundle.manifest, null, 2));
+  zip.file("manifest.json", JSON.stringify({ ...bundle.manifest, summary }, null, 2));
+  zip.file("data/mapping.json", JSON.stringify(mapping, null, 2));
+  zip.file("data/summary.json", JSON.stringify(summary, null, 2));
   zip.file("data/extracted-pages.json", JSON.stringify(bundle.extractedPages, null, 2));
   zip.file("data/mapped-pages.json", JSON.stringify(bundle.mappedPages, null, 2));
   zip.file("data/assets-manifest.json", JSON.stringify(assetsManifest, null, 2));
   zip.file("pages/ford-oval.svg", FORD_OVAL_SVG);
 
   bundle.mappedPages.forEach((page) => {
+    const rebuilt = rebuiltBySourceUrl.get(page.source_url);
+    if (rebuilt) {
+      zip.file(`pages/${normalizeArchivePath(rebuilt.templatePath)}`, rebuilt.html);
+      return;
+    }
+
     const pageName =
       slugify(`${page.page_type}-${page.seo.h1 || page.seo.title || page.source_url}`) ||
       page.page_type;

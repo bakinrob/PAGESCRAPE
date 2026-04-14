@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState, startTransition } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, startTransition, type ChangeEvent } from "react";
 import {
   Download,
   ExternalLink,
@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 
 import { TemplatePreview } from "@/components/template-preview";
-import type { InputMode, JobState, PageResult } from "@/lib/types";
+import { buildInspectorModel } from "@/lib/inspector-model";
+import { deriveWorkspaceStage } from "@/lib/workspace-view-state";
+import type { InputMode, JobState, PageResult, TemplatePackageState } from "@/lib/types";
 
 const sampleHomepage = "https://www.varsityford.com/";
 const sampleManualUrls = [
@@ -62,6 +64,28 @@ function previewLabel(preview?: PreviewState) {
     default:
       return "Preview queued";
   }
+}
+
+function destinationBrandLabel(job: JobState | null) {
+  return job?.destinationBrand?.brand || job?.destinationBrand?.oem || "Destination package";
+}
+
+function WorkspaceMetaCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-[1.1rem] border border-white/8 bg-black/20 p-4">
+      <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-white">{value}</p>
+      <p className="mt-2 text-xs leading-6 text-slate-400">{hint}</p>
+    </div>
+  );
 }
 
 function SourcePanel({
@@ -154,21 +178,24 @@ function InspectorDrawer({
   open,
   onClose,
   jobWarnings,
+  pairing,
 }: {
   page: PageResult | null;
   preview?: PreviewState;
   open: boolean;
   onClose: () => void;
   jobWarnings: string[];
+  pairing?: JobState["pairings"][number];
 }) {
   if (!page) return null;
 
   const extracted = page.extracted;
-  const warnings = [
-    ...(extracted?.validation.warnings ?? []),
-    ...(preview?.warnings ?? []),
-    ...jobWarnings,
-  ].filter((warning, index, list) => warning && list.indexOf(warning) === index);
+  const inspector = buildInspectorModel({
+    page,
+    pairing,
+    previewWarnings: preview?.warnings,
+    jobWarnings,
+  });
 
   return (
     <>
@@ -186,56 +213,57 @@ function InspectorDrawer({
         </div>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Assets</p>
-            <div className="mt-4 space-y-3">
-              {extracted?.media.length ? extracted.media.slice(0, 10).map((asset) => (
-                <div key={asset.url} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
-                  <p className="text-sm font-medium text-white">{asset.alt || asset.role}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{asset.role}</p>
-                  <p className="mt-2 break-all text-xs leading-6 text-slate-400">{asset.url}</p>
-                </div>
-              )) : <p className="text-sm text-slate-500">No extracted assets for this page.</p>}
-            </div>
-          </div>
+          {inspector.sections.map((section) => (
+            <div key={section.key} className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">{section.title}</p>
 
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">SEO</p>
-            <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <p><span className="text-slate-500">Title:</span> {extracted?.seo.title || "Unavailable"}</p>
-              <p><span className="text-slate-500">Meta:</span> {extracted?.seo.meta_description || "Unavailable"}</p>
-              <p><span className="text-slate-500">H1:</span> {extracted?.seo.h1 || "Unavailable"}</p>
-              <p className="break-all"><span className="text-slate-500">Canonical:</span> {extracted?.seo.canonical_url || page.url}</p>
-              <p><span className="text-slate-500">OG title:</span> {extracted?.seo.og_title || "Unavailable"}</p>
-              <p><span className="text-slate-500">OG description:</span> {extracted?.seo.og_description || "Unavailable"}</p>
-            </div>
-          </div>
-
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Source Signals</p>
-            <div className="mt-4 space-y-3">
-              {(extracted?.links.slice(0, 10) ?? []).map((link) => (
-                <div key={`${link.href}-${link.text}`} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-white">{link.text}</p>
-                    <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">{link.kind}</span>
-                  </div>
-                  <p className="mt-2 break-all text-xs leading-6 text-slate-400">{link.href}</p>
+              {section.entries?.length ? (
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  {section.entries.map((entry) => (
+                    <p key={`${section.key}-${entry.label}-${entry.value}`}>
+                      <span className="text-slate-500">{entry.label}:</span> {entry.value}
+                    </p>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              ) : null}
 
-          <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-sky-300">Warnings</p>
-            <div className="mt-4 space-y-3">
-              {warnings.length > 0 ? warnings.slice(0, 10).map((warning) => (
-                <div key={warning} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
-                  {warning}
+              {section.badges?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {section.badges.map((badge) => (
+                    <span key={`${section.key}-${badge}`} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                      {badge}
+                    </span>
+                  ))}
                 </div>
-              )) : <p className="text-sm text-slate-500">No warnings for this page.</p>}
+              ) : null}
+
+              {section.assets ? (
+                <div className="mt-4 space-y-3">
+                  {section.assets.length > 0 ? section.assets.map((asset) => (
+                    <div key={`${section.key}-${asset.detail}`} className="rounded-[1rem] border border-white/8 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-white">{asset.title}</p>
+                        {asset.subtitle ? (
+                          <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">{asset.subtitle}</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 break-all text-xs leading-6 text-slate-400">{asset.detail}</p>
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No {section.title.toLowerCase()} for this page.</p>}
+                </div>
+              ) : null}
+
+              {section.messages ? (
+                <div className="mt-4 space-y-3">
+                  {section.messages.length > 0 ? section.messages.slice(0, 10).map((message) => (
+                    <div key={`${section.key}-${message}`} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      {message}
+                    </div>
+                  )) : <p className="text-sm text-slate-500">No warnings for this page.</p>}
+                </div>
+              ) : null}
             </div>
-          </div>
+          ))}
         </div>
       </aside>
     </>
@@ -244,15 +272,23 @@ function InspectorDrawer({
 
 export function FordScraperApp() {
   const [inputMode, setInputMode] = useState<InputMode>("homepage");
-  const [homepageUrl, setHomepageUrl] = useState(sampleHomepage);
-  const [manualUrls, setManualUrls] = useState(sampleManualUrls);
+  const [homepageUrl, setHomepageUrl] = useState("");
+  const [manualUrls, setManualUrls] = useState("");
   const [job, setJob] = useState<JobState | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [uploadedPackage, setUploadedPackage] = useState<TemplatePackageState | null>(null);
+  const [uploadingPackage, setUploadingPackage] = useState(false);
+  const [packageError, setPackageError] = useState<string | null>(null);
   const [previewByUrl, setPreviewByUrl] = useState<Record<string, PreviewState>>({});
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [compareFullscreen, setCompareFullscreen] = useState(false);
+  const packageInputRef = useRef<HTMLInputElement | null>(null);
+  const workspaceStage = deriveWorkspaceStage(job);
+  const isOrientation = workspaceStage === "orientation";
+  const isProcessing = workspaceStage === "processing";
+  const isWorkspace = workspaceStage === "workspace" && !!job?.pages.length;
 
   const selectedPage = useMemo(
     () => job?.pages.find((page) => page.id === selectedPageId) ?? job?.pages[0] ?? null,
@@ -276,6 +312,13 @@ export function FordScraperApp() {
   }, [previewByUrl, selectedPage]);
 
   const selectedPreview = selectedPageWithPreview ? previewByUrl[selectedPageWithPreview.url] : undefined;
+  const selectedPairing = useMemo(
+    () => (selectedPageWithPreview ? job?.pairings.find((pairing) => pairing.pageId === selectedPageWithPreview.id) : undefined),
+    [job?.pairings, selectedPageWithPreview],
+  );
+  const selectedDestinationLabel = destinationBrandLabel(job);
+  const selectedTemplatePackageId = job?.templatePackage?.id;
+  const packageFallbackVisible = Boolean(selectedPairing && !selectedPageWithPreview?.rebuilt);
 
   const pollJob = useEffectEvent(async () => {
     if (!job?.id) return;
@@ -400,6 +443,11 @@ export function FordScraperApp() {
     setCompareFullscreen(false);
 
     try {
+      if (!uploadedPackage) {
+        setFormError("Upload a destination template package zip before starting the rebuild.");
+        return;
+      }
+
       const response = await fetch("/api/jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -411,7 +459,8 @@ export function FordScraperApp() {
             .map((value) => value.trim())
             .filter(Boolean),
           seoLock: true,
-          oemPreset: "ford-varsity",
+          oemPreset: "dealer-static-reference",
+          templatePackageId: uploadedPackage.id,
         }),
       });
 
@@ -421,20 +470,60 @@ export function FordScraperApp() {
         return;
       }
 
-      setJob(payload as JobState);
+      const nextJob = payload as JobState;
+      setJob(nextJob);
+      setUploadedPackage(nextJob.templatePackage ?? uploadedPackage);
       setSelectedPageId(null);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const isProcessing = !!job && ["queued", "scraping"].includes(job.status);
-  const isReviewReady = !!job && !["queued", "scraping"].includes(job.status) && job.pages.length > 0;
+  const handlePackageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setPackageError(null);
+    setUploadingPackage(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/template-packages", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        templatePackage?: TemplatePackageState;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setPackageError(payload.error || "Destination package upload failed.");
+        return;
+      }
+
+      if (!payload.templatePackage) {
+        setPackageError("Template package metadata was missing from the upload response.");
+        return;
+      }
+
+      setUploadedPackage(payload.templatePackage);
+    } catch (error) {
+      setPackageError(error instanceof Error ? error.message : "Destination package upload failed.");
+    } finally {
+      setUploadingPackage(false);
+      event.target.value = "";
+    }
+  };
 
   return (
     <main className="page-shell">
       <div className="mx-auto max-w-[1680px]">
-        {!job ? (
+        {isOrientation ? (
           <section className="rounded-[2rem] border border-white/8 bg-[#06101b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
             <div className="grid min-h-[84vh] gap-10 px-6 py-8 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
               <div className="flex flex-col justify-center">
@@ -443,12 +532,13 @@ export function FordScraperApp() {
                   Page Migration Workspace
                 </span>
                 <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[0.95] text-white sm:text-6xl">
-                  Rebuild static dealer pages into a provider-ready Ford template.
+                  Rebuild static dealer pages into a provider-ready migration workspace.
                 </h1>
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">
                   Paste one homepage for the guided discovery flow, or switch to exact URLs when you
-                  want to target specific static pages. SEO-critical fields stay preserved
-                  automatically.
+                  want to target specific static pages. The destination package zip will drive the
+                  rebuilt template experience, and sample source URLs are optional when you want a
+                  quick demonstration.
                 </p>
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
                   {[
@@ -466,6 +556,69 @@ export function FordScraperApp() {
 
               <div className="flex items-center">
                 <div className="w-full rounded-[1.8rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6">
+                  <div className="rounded-[1.35rem] border border-dashed border-sky-400/24 bg-sky-500/[0.06] p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">
+                      Destination package upload
+                    </p>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="max-w-xl">
+                        <p className="text-base font-semibold text-white">
+                          {uploadedPackage ? uploadedPackage.filename : "Upload the destination template zip"}
+                        </p>
+                        <p className="mt-2 text-sm leading-7 text-slate-400">
+                          {uploadedPackage
+                            ? `${uploadedPackage.files.length} files indexed${uploadedPackage.manifestPath ? " • manifest detected" : ""}${uploadedPackage.inferredBrand || uploadedPackage.inferredOem ? ` • ${uploadedPackage.inferredBrand || uploadedPackage.inferredOem}` : ""}`
+                            : "Upload one destination template package zip and the app will index its HTML, CSS, JS, assets, and optional manifest.json contents."}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <input
+                          ref={packageInputRef}
+                          type="file"
+                          accept=".zip,application/zip"
+                          className="sr-only"
+                          aria-label="Destination template package zip"
+                          onChange={handlePackageUpload}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => packageInputRef.current?.click()}
+                          className="secondary-button"
+                          disabled={uploadingPackage}
+                        >
+                          {uploadingPackage ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
+                          {uploadedPackage ? "Replace zip" : "Upload zip"}
+                        </button>
+                        {uploadedPackage ? (
+                          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                            Ready
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {["*.html", "*.css", "*.js", "assets/", "manifest.json"].map((item) => (
+                        <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                    {uploadedPackage?.warnings?.length ? (
+                      <div className="mt-4 space-y-2">
+                        {uploadedPackage.warnings.slice(0, 4).map((warning) => (
+                          <div key={warning} className="rounded-[1rem] border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                            {warning}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {packageError ? (
+                      <div className="mt-4 rounded-[1rem] border border-rose-500/30 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
+                        {packageError}
+                      </div>
+                    ) : null}
+                  </div>
+
                   <div className="inline-flex rounded-full border border-white/10 bg-slate-950/60 p-1">
                     <button type="button" onClick={() => setInputMode("homepage")} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${inputMode === "homepage" ? "bg-sky-500 text-white" : "text-slate-300"}`}>
                       Homepage
@@ -482,7 +635,7 @@ export function FordScraperApp() {
                         <input className="field-input" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://www.varsityford.com/" />
                         <p className="mt-3 text-sm leading-7 text-slate-400">
                           The app will discover main static pages from navigation and footer links,
-                          then rebuild them into the Ford Varsity template.
+                          then rebuild them into the destination package template.
                         </p>
                       </label>
                     ) : (
@@ -504,7 +657,7 @@ export function FordScraperApp() {
                         {submitting ? "Starting rebuild" : "Start rebuild"}
                       </button>
                       <button type="button" onClick={() => { setHomepageUrl(sampleHomepage); setManualUrls(sampleManualUrls); }} className="secondary-button">
-                        Load sample inputs
+                        Load sample source
                       </button>
                     </div>
                   </div>
@@ -526,8 +679,8 @@ export function FordScraperApp() {
                     <h1 className="mt-4 text-4xl font-semibold text-white">{hostLabel(job.input.homepageUrl)}</h1>
                     <p className="mt-4 text-base leading-8 text-slate-300">
                       {job.input.inputMode === "homepage"
-                        ? "Discovering static pages from the homepage, then rebuilding them into the destination Ford template."
-                        : "Processing the selected static page URLs, then rebuilding them into the destination Ford template."}{" "}
+                        ? "Discovering static pages from the homepage, then rebuilding them into the destination package."
+                        : "Processing the selected static page URLs, then rebuilding them into the destination package."}{" "}
                       Source screenshots continue loading in the background and do not block completion.
                     </p>
                   </div>
@@ -539,6 +692,35 @@ export function FordScraperApp() {
                   <div
                     className="h-full rounded-full bg-[linear-gradient(90deg,#1f6fff,#53bdfd)] transition-all"
                     style={{ width: `${(job.progress.completed / Math.max(job.progress.total, 1)) * 100}%` }}
+                  />
+                </div>
+                <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                  <WorkspaceMetaCard
+                    label="Template package"
+                    value={job.templatePackage?.filename ?? "Awaiting destination zip"}
+                    hint={
+                      job.templatePackage
+                        ? `${job.templatePackage.files.length} files indexed${job.templatePackage.manifestPath ? " • manifest detected" : " • no manifest yet"}`
+                        : "HTML, CSS, JS, assets, and optional manifest.json will be indexed here."
+                    }
+                  />
+                  <WorkspaceMetaCard
+                    label="Destination brand"
+                    value={job.destinationBrand?.brand || job.destinationBrand?.oem || "Not inferred yet"}
+                    hint={
+                      job.destinationBrand
+                        ? `${job.destinationBrand.source} source • ${(job.destinationBrand.confidence * 100).toFixed(0)}% confidence`
+                        : "Brand/OEM identity will be inferred from the uploaded package."
+                    }
+                  />
+                  <WorkspaceMetaCard
+                    label="Source mode"
+                    value={job.input.inputMode === "homepage" ? "Homepage discovery" : "Exact URL migration"}
+                    hint={
+                      job.input.inputMode === "homepage"
+                        ? "The homepage feeds the discovery pass for related static pages."
+                        : "Each URL is migrated directly without discovery."
+                    }
                   />
                 </div>
               </div>
@@ -582,7 +764,7 @@ export function FordScraperApp() {
           </section>
         ) : null}
 
-        {isReviewReady && selectedPageWithPreview && job ? (
+        {isWorkspace && selectedPageWithPreview && job ? (
           <section className="space-y-6">
             <div className="rounded-[1.8rem] border border-white/8 bg-[#06101b] px-6 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:px-8">
               <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -595,10 +777,39 @@ export function FordScraperApp() {
                     {selectedPageWithPreview.extracted?.seo.h1 || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
                   </h1>
                   <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
-                    Review the current source page on the left and the rebuilt Ford Varsity template
+                    Review the current source page on the left and the rebuilt destination package
                     page on the right. Use the inspector for assets, SEO, source signals, and
                     warnings tied to this same migration target.
                   </p>
+                  <div className="mt-5 grid gap-3 xl:grid-cols-3">
+                    <WorkspaceMetaCard
+                      label="Template package"
+                      value={job.templatePackage?.filename ?? "Awaiting destination zip"}
+                      hint={
+                        job.templatePackage
+                          ? `${job.templatePackage.files.length} files indexed${job.templatePackage.manifestPath ? " • manifest detected" : " • no manifest yet"}`
+                          : "Package metadata will appear here once the destination zip is added."
+                      }
+                    />
+                    <WorkspaceMetaCard
+                      label="Destination brand"
+                      value={job.destinationBrand?.brand || job.destinationBrand?.oem || "Not inferred yet"}
+                      hint={
+                        job.destinationBrand
+                          ? `${job.destinationBrand.source} source • ${(job.destinationBrand.confidence * 100).toFixed(0)}% confidence`
+                          : "Brand/OEM identity will be inferred from the uploaded package."
+                      }
+                    />
+                    <WorkspaceMetaCard
+                      label="Review target"
+                      value={selectedPageWithPreview.extracted?.classification.page_type || "Static page"}
+                      hint={
+                        selectedPairing
+                          ? `${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                          : "The source page and rebuilt destination remain paired for the current selection."
+                      }
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
@@ -666,16 +877,31 @@ export function FordScraperApp() {
                   <div className="border-b border-white/8 px-5 py-4">
                     <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">Rebuilt Template Page</p>
                     <h2 className="mt-3 text-2xl font-semibold text-white">
-                      {selectedPageWithPreview.mapped?.seo.title || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
+                      {selectedDestinationLabel}
                     </h2>
                     <p className="mt-3 text-sm leading-7 text-slate-400">
-                      This side follows the Ford Varsity template contract rather than a generic
-                      preview stack. SEO fields are preserved automatically from the source page.
+                      {packageFallbackVisible
+                        ? "A destination template match exists for this page, but the package-driven HTML is still unavailable. The mapped fallback stays visible below so review can continue without hiding that gap."
+                        : "This side follows the uploaded destination package contract rather than a generic preview stack. SEO fields are preserved automatically from the source page."}
+                    </p>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      {selectedPairing
+                        ? `Template path: ${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                        : job.templatePackage?.filename
+                          ? `Destination package: ${job.templatePackage.filename}`
+                          : "Destination package metadata will appear here after upload."}
                     </p>
                   </div>
 
                   <div className="p-4">
-                    <TemplatePreview mapped={selectedPageWithPreview.mapped} sourceUrl={selectedPageWithPreview.url} />
+                    <TemplatePreview
+                      mapped={selectedPageWithPreview.mapped}
+                      rebuilt={selectedPageWithPreview.rebuilt}
+                      sourceUrl={selectedPageWithPreview.url}
+                      destinationLabel={selectedDestinationLabel}
+                      templatePackageId={selectedTemplatePackageId}
+                      matchedTemplatePath={selectedPairing?.templatePath}
+                    />
                   </div>
                 </section>
               </div>
@@ -684,7 +910,14 @@ export function FordScraperApp() {
         ) : null}
       </div>
 
-      <InspectorDrawer page={selectedPageWithPreview} preview={selectedPreview} open={inspectorOpen} onClose={() => setInspectorOpen(false)} jobWarnings={job?.warnings ?? []} />
+      <InspectorDrawer
+        page={selectedPageWithPreview}
+        preview={selectedPreview}
+        open={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        jobWarnings={job?.warnings ?? []}
+        pairing={selectedPairing}
+      />
 
       {compareFullscreen && selectedPageWithPreview ? (
         <div className="fixed inset-0 z-50 bg-[#02060c] p-3 sm:p-4">
@@ -713,11 +946,23 @@ export function FordScraperApp() {
                 <div className="shrink-0 border-b border-white/8 px-5 py-4">
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">Rebuilt Template Page</p>
                   <h2 className="mt-3 text-2xl font-semibold text-white">
-                    {selectedPageWithPreview.mapped?.seo.title || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
+                    {selectedDestinationLabel}
                   </h2>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    {selectedPairing
+                      ? `Template path: ${selectedPairing.templatePath} • ${Math.round(selectedPairing.confidence * 100)}% match`
+                      : "Awaiting destination template pairing"}
+                  </p>
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto p-4">
-                  <TemplatePreview mapped={selectedPageWithPreview.mapped} sourceUrl={selectedPageWithPreview.url} />
+                  <TemplatePreview
+                    mapped={selectedPageWithPreview.mapped}
+                    rebuilt={selectedPageWithPreview.rebuilt}
+                    sourceUrl={selectedPageWithPreview.url}
+                    destinationLabel={selectedDestinationLabel}
+                    templatePackageId={selectedTemplatePackageId}
+                    matchedTemplatePath={selectedPairing?.templatePath}
+                  />
                 </div>
               </section>
             </div>
