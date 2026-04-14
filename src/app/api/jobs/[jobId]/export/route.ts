@@ -26,9 +26,16 @@ export async function GET(
     .replace(/[^a-z0-9]+/gi, "-")
     .replace(/^-+|-+$/g, "")
     .toLowerCase();
+  const rebuiltPages = job.pages
+    .filter((page) => page.rebuilt)
+    .map((page) => ({
+      pageId: page.id,
+      sourceUrl: page.extracted?.source.url || page.url,
+      rebuilt: page.rebuilt!,
+    }));
 
   if (format !== "json") {
-    const archive = await buildHtmlExportArchive(bundle);
+    const archive = await buildHtmlExportArchive(bundle, { rebuiltPages });
     return new NextResponse(new Uint8Array(archive.content), {
       headers: {
         "content-type": "application/zip",
