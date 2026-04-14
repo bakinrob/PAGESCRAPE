@@ -55,7 +55,8 @@ function safeRelativePath(inputPath: string) {
       if (!cleaned) {
         return "file";
       }
-      if (WINDOWS_RESERVED_NAMES.has(cleaned.toLowerCase())) {
+      const reservedCheck = path.parse(cleaned).name.toLowerCase();
+      if (WINDOWS_RESERVED_NAMES.has(reservedCheck)) {
         return `${cleaned}-file`;
       }
       return cleaned;

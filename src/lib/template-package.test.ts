@@ -52,6 +52,7 @@ describe("indexTemplatePackage", () => {
   it("stores the original archive and extracted files inside the package workspace", async () => {
     const zip = new JSZip();
     zip.file("pages/home.html", "<html><body><h1>Home</h1></body></html>");
+    zip.file("assets/CON.txt", "reserved");
 
     const buffer = await zip.generateAsync({ type: "nodebuffer" });
     const metadata = await indexTemplatePackage(buffer, "dealer-template.zip");
@@ -63,11 +64,16 @@ describe("indexTemplatePackage", () => {
     });
 
     const extractedHtml = await readFile(path.join(saved.extractedRoot, "pages", "home.html"), "utf8");
+    const reservedAsset = await readFile(
+      path.join(saved.extractedRoot, "assets", "CON.txt-file"),
+      "utf8",
+    );
 
     expect(saved.packageRoot).toContain("output");
     expect(saved.packageRoot).toContain("template-packages");
     expect(saved.archivePath.endsWith("unsafe-name.zip")).toBe(true);
     expect(extractedHtml).toContain("<h1>Home</h1>");
+    expect(reservedAsset).toBe("reserved");
 
     await rm(saved.packageRoot, { recursive: true, force: true });
   });
