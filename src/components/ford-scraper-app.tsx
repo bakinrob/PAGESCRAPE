@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { TemplatePreview } from "@/components/template-preview";
+import { deriveWorkspaceStage } from "@/lib/workspace-view-state";
 import type { InputMode, JobState, PageResult } from "@/lib/types";
 
 const sampleHomepage = "https://www.varsityford.com/";
@@ -62,6 +63,24 @@ function previewLabel(preview?: PreviewState) {
     default:
       return "Preview queued";
   }
+}
+
+function WorkspaceMetaCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-[1.1rem] border border-white/8 bg-black/20 p-4">
+      <p className="text-[0.62rem] font-semibold uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-white">{value}</p>
+      <p className="mt-2 text-xs leading-6 text-slate-400">{hint}</p>
+    </div>
+  );
 }
 
 function SourcePanel({
@@ -253,6 +272,10 @@ export function FordScraperApp() {
   const [previewByUrl, setPreviewByUrl] = useState<Record<string, PreviewState>>({});
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [compareFullscreen, setCompareFullscreen] = useState(false);
+  const workspaceStage = deriveWorkspaceStage(job);
+  const isOrientation = workspaceStage === "orientation";
+  const isProcessing = workspaceStage === "processing";
+  const isWorkspace = workspaceStage === "workspace" && !!job?.pages.length;
 
   const selectedPage = useMemo(
     () => job?.pages.find((page) => page.id === selectedPageId) ?? job?.pages[0] ?? null,
@@ -428,13 +451,10 @@ export function FordScraperApp() {
     }
   };
 
-  const isProcessing = !!job && ["queued", "scraping"].includes(job.status);
-  const isReviewReady = !!job && !["queued", "scraping"].includes(job.status) && job.pages.length > 0;
-
   return (
     <main className="page-shell">
       <div className="mx-auto max-w-[1680px]">
-        {!job ? (
+        {isOrientation ? (
           <section className="rounded-[2rem] border border-white/8 bg-[#06101b] shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
             <div className="grid min-h-[84vh] gap-10 px-6 py-8 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-10">
               <div className="flex flex-col justify-center">
@@ -443,12 +463,13 @@ export function FordScraperApp() {
                   Page Migration Workspace
                 </span>
                 <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[0.95] text-white sm:text-6xl">
-                  Rebuild static dealer pages into a provider-ready Ford template.
+                  Rebuild static dealer pages into a provider-ready migration workspace.
                 </h1>
                 <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">
                   Paste one homepage for the guided discovery flow, or switch to exact URLs when you
-                  want to target specific static pages. SEO-critical fields stay preserved
-                  automatically.
+                  want to target specific static pages. The destination package zip will drive the
+                  rebuilt template experience, while Varsity Ford remains the sample source site for
+                  the demo.
                 </p>
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
                   {[
@@ -466,6 +487,31 @@ export function FordScraperApp() {
 
               <div className="flex items-center">
                 <div className="w-full rounded-[1.8rem] border border-white/10 bg-white/[0.04] p-5 sm:p-6">
+                  <div className="rounded-[1.35rem] border border-dashed border-sky-400/24 bg-sky-500/[0.06] p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sky-300">
+                      Destination package upload
+                    </p>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="max-w-xl">
+                        <p className="text-base font-semibold text-white">Zip upload comes next</p>
+                        <p className="mt-2 text-sm leading-7 text-slate-400">
+                          The next step will accept one destination template package zip and index
+                          its HTML, CSS, JS, asset, and optional manifest.json contents.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.18em] text-sky-100">
+                        Coming soon
+                      </span>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {["*.html", "*.css", "*.js", "assets/", "manifest.json"].map((item) => (
+                        <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-slate-300">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="inline-flex rounded-full border border-white/10 bg-slate-950/60 p-1">
                     <button type="button" onClick={() => setInputMode("homepage")} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${inputMode === "homepage" ? "bg-sky-500 text-white" : "text-slate-300"}`}>
                       Homepage
@@ -482,7 +528,7 @@ export function FordScraperApp() {
                         <input className="field-input" value={homepageUrl} onChange={(event) => setHomepageUrl(event.target.value)} placeholder="https://www.varsityford.com/" />
                         <p className="mt-3 text-sm leading-7 text-slate-400">
                           The app will discover main static pages from navigation and footer links,
-                          then rebuild them into the Ford Varsity template.
+                          then rebuild them into the destination package template.
                         </p>
                       </label>
                     ) : (
@@ -526,8 +572,8 @@ export function FordScraperApp() {
                     <h1 className="mt-4 text-4xl font-semibold text-white">{hostLabel(job.input.homepageUrl)}</h1>
                     <p className="mt-4 text-base leading-8 text-slate-300">
                       {job.input.inputMode === "homepage"
-                        ? "Discovering static pages from the homepage, then rebuilding them into the destination Ford template."
-                        : "Processing the selected static page URLs, then rebuilding them into the destination Ford template."}{" "}
+                        ? "Discovering static pages from the homepage, then rebuilding them into the destination package."
+                        : "Processing the selected static page URLs, then rebuilding them into the destination package."}{" "}
                       Source screenshots continue loading in the background and do not block completion.
                     </p>
                   </div>
@@ -539,6 +585,35 @@ export function FordScraperApp() {
                   <div
                     className="h-full rounded-full bg-[linear-gradient(90deg,#1f6fff,#53bdfd)] transition-all"
                     style={{ width: `${(job.progress.completed / Math.max(job.progress.total, 1)) * 100}%` }}
+                  />
+                </div>
+                <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                  <WorkspaceMetaCard
+                    label="Template package"
+                    value={job.templatePackage?.filename ?? "Awaiting destination zip"}
+                    hint={
+                      job.templatePackage
+                        ? `${job.templatePackage.files.length} files indexed${job.templatePackage.manifestPath ? " • manifest detected" : " • no manifest yet"}`
+                        : "HTML, CSS, JS, assets, and optional manifest.json will be indexed here."
+                    }
+                  />
+                  <WorkspaceMetaCard
+                    label="Destination brand"
+                    value={job.destinationBrand?.brand || job.destinationBrand?.oem || "Not inferred yet"}
+                    hint={
+                      job.destinationBrand
+                        ? `${job.destinationBrand.source} source • ${(job.destinationBrand.confidence * 100).toFixed(0)}% confidence`
+                        : "Brand/OEM identity will be inferred from the uploaded package."
+                    }
+                  />
+                  <WorkspaceMetaCard
+                    label="Source mode"
+                    value={job.input.inputMode === "homepage" ? "Homepage discovery" : "Exact URL migration"}
+                    hint={
+                      job.input.inputMode === "homepage"
+                        ? "The homepage feeds the discovery pass for related static pages."
+                        : "Each URL is migrated directly without discovery."
+                    }
                   />
                 </div>
               </div>
@@ -582,7 +657,7 @@ export function FordScraperApp() {
           </section>
         ) : null}
 
-        {isReviewReady && selectedPageWithPreview && job ? (
+        {isWorkspace && selectedPageWithPreview && job ? (
           <section className="space-y-6">
             <div className="rounded-[1.8rem] border border-white/8 bg-[#06101b] px-6 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)] sm:px-8">
               <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
@@ -595,10 +670,35 @@ export function FordScraperApp() {
                     {selectedPageWithPreview.extracted?.seo.h1 || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
                   </h1>
                   <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
-                    Review the current source page on the left and the rebuilt Ford Varsity template
+                    Review the current source page on the left and the rebuilt destination package
                     page on the right. Use the inspector for assets, SEO, source signals, and
                     warnings tied to this same migration target.
                   </p>
+                  <div className="mt-5 grid gap-3 xl:grid-cols-3">
+                    <WorkspaceMetaCard
+                      label="Template package"
+                      value={job.templatePackage?.filename ?? "Awaiting destination zip"}
+                      hint={
+                        job.templatePackage
+                          ? `${job.templatePackage.files.length} files indexed${job.templatePackage.manifestPath ? " • manifest detected" : " • no manifest yet"}`
+                          : "Package metadata will appear here once the destination zip is added."
+                      }
+                    />
+                    <WorkspaceMetaCard
+                      label="Destination brand"
+                      value={job.destinationBrand?.brand || job.destinationBrand?.oem || "Not inferred yet"}
+                      hint={
+                        job.destinationBrand
+                          ? `${job.destinationBrand.source} source • ${(job.destinationBrand.confidence * 100).toFixed(0)}% confidence`
+                          : "Brand/OEM identity will be inferred from the uploaded package."
+                      }
+                    />
+                    <WorkspaceMetaCard
+                      label="Review target"
+                      value={selectedPageWithPreview.extracted?.classification.page_type || "Static page"}
+                      hint="The source page and rebuilt destination remain paired for the current selection."
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
@@ -669,8 +769,14 @@ export function FordScraperApp() {
                       {selectedPageWithPreview.mapped?.seo.title || selectedPageWithPreview.extracted?.seo.title || selectedPageWithPreview.url}
                     </h2>
                     <p className="mt-3 text-sm leading-7 text-slate-400">
-                      This side follows the Ford Varsity template contract rather than a generic
-                      preview stack. SEO fields are preserved automatically from the source page.
+                      This side follows the uploaded destination package contract rather than a
+                      generic preview stack. SEO fields are preserved automatically from the source
+                      page.
+                    </p>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      {job.templatePackage?.filename
+                        ? `Destination package: ${job.templatePackage.filename}`
+                        : "Destination package metadata will appear here after upload."}
                     </p>
                   </div>
 

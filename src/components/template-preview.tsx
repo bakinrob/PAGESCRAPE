@@ -492,7 +492,7 @@ function HomepageTemplate({ mapped }: { mapped: MappedPagePayload }) {
           </div>
         </div>
         <div className={`${styles.container} ${styles.footerNote}`}>
-          Rebuilt from the source page using the Ford Varsity migration template.
+          Rebuilt from the source page using the uploaded destination migration template.
         </div>
       </footer>
     </div>
@@ -811,7 +811,7 @@ export function TemplatePreview({
           <h3 className={styles.cardHeading}>This page stays visible in review, but it is not rebuilt for v1.</h3>
           <p className={styles.cardText}>
             Inventory search, VDP, checkout, and feed-driven surfaces remain out of scope for the
-            Ford static page migration workflow.
+            static page migration workflow.
           </p>
           <p className={styles.cardText}>{sourceUrl}</p>
         </div>
