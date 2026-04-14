@@ -59,6 +59,24 @@ export function classifyPackagePath(path: string): TemplatePackageFile["kind"] {
   return "other";
 }
 
+function pickManifestPath(paths: string[]) {
+  const manifestCandidates = paths.filter((entryPath) =>
+    entryPath.toLowerCase().endsWith("manifest.json"),
+  );
+  if (manifestCandidates.length === 0) {
+    return undefined;
+  }
+
+  return manifestCandidates.sort((left, right) => {
+    const leftDepth = left.split("/").length;
+    const rightDepth = right.split("/").length;
+    if (leftDepth !== rightDepth) {
+      return leftDepth - rightDepth;
+    }
+    return left.localeCompare(right);
+  })[0];
+}
+
 export async function indexTemplatePackage(
   buffer: Buffer,
   filename: string,
@@ -85,7 +103,7 @@ export async function indexTemplatePackage(
     }),
   );
 
-  const manifestPath = files.find((file) => file.path.toLowerCase().endsWith("manifest.json"))?.path;
+  const manifestPath = pickManifestPath(fileEntries);
   const manifestFile = manifestPath ? zip.file(manifestPath) : null;
   const manifestText = manifestFile ? await manifestFile.async("string") : null;
   let inferredBrand: string | undefined;
@@ -101,8 +119,10 @@ export async function indexTemplatePackage(
       };
       inferredBrand = manifest.brand || manifest.destinationBrand;
       inferredOem = manifest.oem || manifest.destinationOem;
-    } catch {
-      // Keep indexing deterministic even if the manifest is malformed.
+    } catch (error) {
+      throw new Error(
+        `Template package manifest is invalid JSON at ${manifestPath}: ${error instanceof Error ? error.message : "unknown parse error"}`,
+      );
     }
   }
 

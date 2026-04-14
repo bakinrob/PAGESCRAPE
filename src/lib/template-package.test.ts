@@ -18,6 +18,8 @@ describe("indexTemplatePackage", () => {
 
     expect(result.filename).toBe("dealer-template.zip");
     expect(result.manifestPath).toBe("manifest.json");
+    expect(result.inferredBrand).toBe("Ford");
+    expect(result.inferredOem).toBe("Ford");
     expect(result.files).toEqual([
       { path: "assets/logo.svg", kind: "asset", size: expect.any(Number) },
       { path: "manifest.json", kind: "other", size: expect.any(Number) },
@@ -26,5 +28,17 @@ describe("indexTemplatePackage", () => {
       { path: "scripts/app.js", kind: "js", size: expect.any(Number) },
       { path: "styles/site.css", kind: "css", size: expect.any(Number) },
     ]);
+  });
+
+  it("throws when the chosen manifest is malformed", async () => {
+    const zip = new JSZip();
+    zip.file("manifest.json", "{invalid");
+    zip.file("pages/home.html", "<html><body><h1>Home</h1></body></html>");
+
+    const buffer = await zip.generateAsync({ type: "nodebuffer" });
+
+    await expect(indexTemplatePackage(buffer, "broken-template.zip")).rejects.toThrow(
+      "Template package manifest is invalid JSON",
+    );
   });
 });

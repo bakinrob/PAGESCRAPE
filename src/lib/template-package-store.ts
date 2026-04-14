@@ -6,6 +6,16 @@ import type { TemplatePackageState } from "@/lib/types";
 
 const TEMPLATE_PACKAGE_ROOT = path.join(process.cwd(), "output", "template-packages");
 
+function safePathSegment(value: string, fallback: string) {
+  const normalized = path.basename(value).replace(/[<>:"/\\|?*\x00-\x1f]+/g, "-").trim();
+  const collapsed = normalized.replace(/\.+/g, ".").replace(/\s+/g, "-");
+  const sanitized = collapsed.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!sanitized || sanitized === "." || sanitized === "..") {
+    return fallback;
+  }
+  return sanitized.slice(0, 120);
+}
+
 function safeRelativePath(inputPath: string) {
   const normalized = inputPath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter(Boolean);
@@ -19,12 +29,15 @@ export async function saveTemplatePackage(input: {
   buffer: Buffer;
   metadata?: TemplatePackageState;
 }) {
-  const packageRoot = path.join(TEMPLATE_PACKAGE_ROOT, input.packageId);
+  const safePackageId = safePathSegment(input.packageId, "template-package");
+  const safeFilename = safePathSegment(input.filename, "template-package.zip");
+  const packageRoot = path.join(TEMPLATE_PACKAGE_ROOT, safePackageId);
   const extractedRoot = path.join(packageRoot, "extracted");
   const zip = await JSZip.loadAsync(input.buffer);
 
   await mkdir(extractedRoot, { recursive: true });
-  await writeFile(path.join(packageRoot, input.filename), input.buffer);
+  const archivePath = path.join(packageRoot, safeFilename);
+  await writeFile(archivePath, input.buffer);
 
   const entries = Object.values(zip.files)
     .filter((entry) => !entry.dir)
@@ -45,6 +58,7 @@ export async function saveTemplatePackage(input: {
     packageRoot,
     extractedRoot,
     metadataPath,
+    archivePath,
   };
 }
 
@@ -53,9 +67,10 @@ export async function writeExtractedTemplatePackageFile(input: {
   relativePath: string;
   content: Buffer | string;
 }) {
+  const safePackageId = safePathSegment(input.packageId, "template-package");
   const extractedPath = path.join(
     TEMPLATE_PACKAGE_ROOT,
-    input.packageId,
+    safePackageId,
     "extracted",
     safeRelativePath(input.relativePath),
   );
